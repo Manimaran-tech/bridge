@@ -140,7 +140,14 @@ async function ensureCloudflaredBinary() {
   return cachedPath;
 }
 
-const UI_WIDTH = 80;
+const getCols = () => Math.max(76, process.stdout.columns || 100);
+const getRows = () => Math.max(20, process.stdout.rows || 30);
+
+function stripAnsi(s) {
+  return s.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+const UI_WIDTH = 100;
 const THIN_BAR = '─'.repeat(UI_WIDTH);
 const THICK_BAR = '━'.repeat(UI_WIDTH);
 const bar = THIN_BAR;
@@ -223,38 +230,61 @@ function switchProjectDirectory(newPath) {
   req.end();
 }
 
-function renderAsciiHeader(badgeText = '') {
-  console.log(`${C.voltBold}${THICK_BAR}${C.reset}`);
-  console.log(
-    `  ${C.voltBold}██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗${C.reset}` +
-    `    ${C.steel}╔══════╗${C.reset}          ${C.cyan}╔══╗  ╔══╗  ${C.reset}`
-  );
-  console.log(
-    `  ${C.voltBold}██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝${C.reset}` +
-    `    ${C.steel}║ ${C.white}>_ ${C.voltBold}█${C.steel} ║${C.reset}        ${C.cyan}╔═╝  ╚══╝  ╚═╗${C.reset}`
-  );
-  console.log(
-    `  ${C.voltBold}██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗  ${C.reset}` +
-    `  ${C.voltBold}╔╩══════╩═╗${C.reset}     ${C.cyan}╔╝   ${C.voltBold}✦${C.cyanBold} LLM${C.cyan}    ╚╗${C.reset}`
-  );
-  console.log(
-    `  ${C.voltBold}██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝  ${C.reset}` +
-    `  ${C.voltBold}║    ╚════╬═════╬════╝         ║${C.reset}`
-  );
-  console.log(
-    `  ${C.voltBold}██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗${C.reset}` +
-    `  ${C.voltBold}╚╗    ╔═══╩═════╩═══╗         ╔╝${C.reset}`
-  );
-  console.log(
-    `  ${C.voltBold}╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝${C.reset}` +
-    `   ${C.voltBold}╚════╝             ╚═════════╝ ${C.reset}`
-  );
-  console.log(`${C.voltBold}${THICK_BAR}${C.reset}`);
+function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
+  const thickBar = '━'.repeat(cols);
+  const thinBar = '─'.repeat(cols);
+
+  const baseLines = [
+    `  ${C.voltBold}██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗${C.reset}    ${C.steel}╔══════╗${C.reset}          ${C.cyan}╔══╗  ╔══╗  ${C.reset}`,
+    `  ${C.voltBold}██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝${C.reset}    ${C.steel}║ ${C.white}>_ ${C.voltBold}█${C.steel} ║${C.reset}        ${C.cyan}╔═╝  ╚══╝  ╚═╗${C.reset}`,
+    `  ${C.voltBold}██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗  ${C.reset}  ${C.voltBold}╔╩══════╩═╗${C.reset}     ${C.cyan}╔╝   ${C.voltBold}✦${C.cyanBold} LLM${C.cyan}    ╚╗${C.reset}`,
+    `  ${C.voltBold}██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝  ${C.reset}  ${C.voltBold}║    ╚════╬═════╬════╝         ║${C.reset}`,
+    `  ${C.voltBold}██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗${C.reset}  ${C.voltBold}╚╗    ╔═══╩═════╩═══╗         ╔╝${C.reset}`,
+    `  ${C.voltBold}╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝${C.reset}   ${C.voltBold}╚════╝             ╚═════════╝ ${C.reset}`
+  ];
+
+  const baseWidth = 76;
+  const extra = Math.max(0, cols - baseWidth - 4);
+
+  out.push(`${C.voltBold}${thickBar}${C.reset}`);
+
+  if (extra >= 8) {
+    const ext1 = `${C.cyan}═`.repeat(extra - 1) + `╗${C.reset}`;
+    const tag1 = ' [ANYCAST EDGE] ';
+    const ext2 = ' '.repeat(Math.max(0, extra - tag1.length - 1)) + `${C.steel}${tag1}${C.cyan}║${C.reset}`;
+    const tag2 = ' ✦ MCP TUNNEL ✦ ';
+    const ext3 = `${C.cyan}─`.repeat(Math.max(0, extra - tag2.length - 1)) + `${C.voltBold}${tag2}${C.cyan}║${C.reset}`;
+    const tag3 = ' [AES-256-GCM] ';
+    const ext4 = `${C.cyan}═`.repeat(Math.max(0, extra - tag3.length - 1)) + `${C.steel}${tag3}${C.cyan}║${C.reset}`;
+    const tag4 = ' [LOCAL SANDBOX] ';
+    const ext5 = ' '.repeat(Math.max(0, extra - tag4.length - 1)) + `${C.steel}${tag4}${C.cyan}║${C.reset}`;
+    const ext6 = `${C.cyan}═`.repeat(extra - 1) + `╝${C.reset}`;
+
+    out.push(baseLines[0] + ext1);
+    out.push(baseLines[1] + ext2);
+    out.push(baseLines[2] + ext3);
+    out.push(baseLines[3] + ext4);
+    out.push(baseLines[4] + ext5);
+    out.push(baseLines[5] + ext6);
+  } else {
+    baseLines.forEach(l => out.push(l));
+  }
+
+  out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   if (badgeText) {
-    console.log(`  ${badgeText}`);
-    console.log(`${C.darkDivider}${THIN_BAR}${C.reset}`);
+    const rightInfo = `${C.steel}v1.0.5 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
+    const leftText = `  ${badgeText}`;
+    const spaceCount = Math.max(2, cols - stripAnsi(leftText).length - stripAnsi(rightInfo).length - 2);
+    out.push(leftText + ' '.repeat(spaceCount) + rightInfo);
+    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
   }
+}
+
+function renderAsciiHeader(badgeText = '') {
+  const out = [];
+  renderAsciiHeaderToOut(out, badgeText, getCols());
+  console.log(out.join('\n'));
 }
 
 /**
@@ -283,94 +313,122 @@ const BRIDGE_WIRE_ASCII = [
 ];
 
 async function playInitialLoadingAnimation(durationMs = 2200) {
-  process.stdout.write('\x1b[?25l');
+  // Enter alternate buffer and hide cursor - NO frames ever enter scrollback!
+  process.stdout.write('\x1b[?1049h\x1b[?25l');
   const startTime = Date.now();
   const logoWidth = 68;
-  const barLen = 30;
 
   while (true) {
     const elapsed = Date.now() - startTime;
     const progress = Math.min(1.0, elapsed / durationMs);
 
-    const termCols = process.stdout.columns || 80;
-    const termRows = process.stdout.rows || 25;
+    const cols = getCols();
+    const rows = getRows();
 
-    const padLeft = ' '.repeat(Math.max(0, Math.floor((termCols - logoWidth) / 2)));
-    const topPad = '\n'.repeat(Math.max(0, Math.floor((termRows - 23) / 2)));
+    const thickBar = '━'.repeat(cols);
+    const thinBar = '─'.repeat(cols);
 
     const out = [];
-    if (topPad) out.push(topPad);
 
-    // 1. High-density compact suspension bridge wires and towers (68 cols x 16 rows)
+    // Full-width top frame
+    out.push(`${C.voltBold}${thickBar}${C.reset}`);
+    const topHeader = `  ${C.voltBold}BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS${C.reset}`;
+    const topVersion = `${C.steel}v1.0.5  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
+    const topSpaces = Math.max(2, cols - stripAnsi(topHeader).length - stripAnsi(topVersion).length);
+    out.push(topHeader + ' '.repeat(topSpaces) + topVersion);
+    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
+
+    // Vertical padding to center bridge art vertically
+    const contentLines = 16 + 2 + 1 + 1 + 1 + 1 + 1; // 24 lines
+    const topMargin = Math.max(0, Math.floor((rows - 5 - contentLines) / 2));
+    for (let i = 0; i < topMargin; i++) {
+      out.push('');
+    }
+
+    // 1. High-density compact suspension bridge wires and towers (68 cols x 16 rows) centered
+    const padLeft = ' '.repeat(Math.max(0, Math.floor((cols - logoWidth) / 2)));
     for (const line of BRIDGE_WIRE_ASCII) {
       out.push(padLeft + line);
     }
 
-    // 2. Vertical gap between bridge and text (2 blank lines)
+    // 2. Vertical gap between bridge and text
     out.push('');
     out.push('');
 
-    // 3. Wide-tracked title & subtitle centered
+    // 3. Wide-tracked title & adaptive subtitle
     const titleText = `${C.voltBold}B   R   I   D   G   E${C.reset}`;
-    const subTitle = `${C.steel}[LOCAL WORKSPACE] ${C.voltBold}──────━──────${C.cyanBold} [CLOUD AI MODEL]${C.reset}`;
-    out.push(' '.repeat(Math.max(0, Math.floor((termCols - 21) / 2))) + titleText);
-    out.push(' '.repeat(Math.max(0, Math.floor((termCols - 47) / 2))) + subTitle);
+    out.push(' '.repeat(Math.max(0, Math.floor((cols - 21) / 2))) + titleText);
+
+    const leftEndpoint = '[LOCAL WORKSPACE]';
+    const rightEndpoint = '[CLOUD AI MODEL]';
+    const trackWidth = Math.min(cols - 10, Math.max(48, Math.floor(cols * 0.6)));
+    const dashCount = Math.max(4, Math.floor((trackWidth - leftEndpoint.length - rightEndpoint.length - 3) / 2));
+    const subTitle = `${C.steel}${leftEndpoint} ${C.voltBold}${'─'.repeat(dashCount)}━${'─'.repeat(dashCount)}${C.cyanBold} ${rightEndpoint}${C.reset}`;
+    out.push(' '.repeat(Math.max(0, Math.floor((cols - stripAnsi(subTitle).length) / 2))) + subTitle);
     out.push('');
 
-    // 4. Smooth progress bar loading in < 3 seconds
+    // 4. Smooth adaptive progress bar
+    const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
     const pct = Math.min(100, Math.round(progress * 100));
     const filled = Math.min(barLen, Math.round(progress * barLen));
     const empty = barLen - filled;
     const barStr = C.voltBold + '█'.repeat(filled) + C.steel + '░'.repeat(empty) + C.reset;
-    const barPad = ' '.repeat(Math.max(0, Math.floor((termCols - (barLen + 8)) / 2)));
-    out.push(`${barPad}[${barStr}]  ${C.voltBold}${pct}%${C.reset}`);
+    const barLine = `[${barStr}]  ${C.voltBold}${pct}%${C.reset}`;
+    const barPad = ' '.repeat(Math.max(0, Math.floor((cols - stripAnsi(barLine).length) / 2)));
+    out.push(`${barPad}${barLine}`);
 
-    const statusMsg = progress >= 1.0 ? 'BRIDGE READY' : 'INITIALIZING SECURE ANYCAST TUNNEL...';
-    const statusPad = ' '.repeat(Math.max(0, Math.floor((termCols - 36) / 2)));
+    const statusMsg = progress >= 1.0 ? 'BRIDGE READY — ANYCAST TUNNEL ACTIVE' : 'INITIALIZING SECURE ANYCAST TUNNEL...';
+    const statusPad = ' '.repeat(Math.max(0, Math.floor((cols - statusMsg.length) / 2)));
     out.push(`${statusPad}${C.whiteBold}${statusMsg}${C.reset}`);
 
-    process.stdout.write('\x1b[2J\x1b[0f');
-    process.stdout.write(out.join('\n'));
+    // Fill remaining vertical space down to bottom frame
+    const remaining = rows - out.length - 2;
+    for (let i = 0; i < remaining; i++) {
+      out.push('');
+    }
+    out.push(`${C.voltBold}${thickBar}${C.reset}`);
+
+    // Clamped strictly to rows - 1, in-place redraw with cursor home (NO trailing newline!)
+    const clamped = out.slice(0, rows - 1);
+    process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
 
     if (progress >= 1.0) {
       break;
     }
 
-    await new Promise(r => setTimeout(r, 40));
+    await new Promise(r => setTimeout(r, 35));
   }
 
   await new Promise(r => setTimeout(r, 120));
-  process.stdout.write('\x1b[?25h');
-  process.stdout.write('\x1b[2J\x1b[0f');
 }
 
 async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500, maxDurationMs = 20000) {
-  process.stdout.write('\x1b[?25l');
+  process.stdout.write('\x1b[?1049h\x1b[?25l');
 
   const startTime = Date.now();
   let frame = 0;
 
   const packetTracks = [
-    '  [LOCAL PC] ═══▶═════════════════ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ══════▶══════════════ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════▶═══════════ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ════════════▶════════ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ═══════════════▶═════ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ══════════════════▶══ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════════════════ ( ✦ ) ═══▶══════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════════════════ ( ∞ ) ══════▶═══════════════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════════════════ ( ∞ ) ═════════▶════════════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════════════════ ( ∞ ) ════════════▶═════════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════════════════ ( ∞ ) ═══════════════▶══════ [CLOUD AI] ✦',
-    '  [LOCAL PC] ═════════════════════ ( ∞ ) ══════════════════▶═══ [CLOUD AI] ✦',
-    '  [LOCAL PC] ═════════════════════ ( ∞ ) ═══════════════◀══════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════════════════ ( ∞ ) ════════════◀═════════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════════════════ ( ✦ ) ═══◀══════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ══════════════════◀══ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ═══════════════◀═════ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ════════════◀════════ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ═════════◀═══════════ ( ∞ ) ══════════════════════ [CLOUD AI]',
-    '  [LOCAL PC] ══════◀══════════════ ( ∞ ) ══════════════════════ [CLOUD AI]'
+    '═══▶═════════════════ ( ∞ ) ══════════════════════',
+    '══════▶══════════════ ( ∞ ) ══════════════════════',
+    '═════════▶═══════════ ( ∞ ) ══════════════════════',
+    '════════════▶════════ ( ∞ ) ══════════════════════',
+    '═══════════════▶═════ ( ∞ ) ══════════════════════',
+    '══════════════════▶══ ( ∞ ) ══════════════════════',
+    '═════════════════════ ( ✦ ) ═══▶══════════════════',
+    '═════════════════════ ( ∞ ) ══════▶═══════════════',
+    '═════════════════════ ( ∞ ) ═════════▶════════════',
+    '═════════════════════ ( ∞ ) ════════════▶═════════',
+    '═════════════════════ ( ∞ ) ═══════════════▶══════',
+    '═════════════════════ ( ∞ ) ══════════════════▶═══',
+    '═════════════════════ ( ∞ ) ═══════════════◀══════',
+    '═════════════════════ ( ∞ ) ════════════◀═════════',
+    '═════════════════════ ( ✦ ) ═══◀══════════════════',
+    '══════════════════◀══ ( ∞ ) ══════════════════════',
+    '═══════════════◀═════ ( ∞ ) ══════════════════════',
+    '════════════◀════════ ( ∞ ) ══════════════════════',
+    '═════════◀═══════════ ( ∞ ) ══════════════════════',
+    '══════◀══════════════ ( ∞ ) ══════════════════════'
   ];
 
   const spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -385,7 +443,6 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
     const elapsed = Date.now() - startTime;
     const url = getTunnelUrlFn();
 
-    // Finish when we have the URL and met minimum duration (or hit max timeout)
     if ((url && elapsed >= minDurationMs) || elapsed >= maxDurationMs) {
       break;
     }
@@ -394,53 +451,62 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
     if (url) progress = 0.98;
     const pct = Math.round(progress * 100);
 
-    const barLen = 46;
+    const cols = getCols();
+    const rows = getRows();
+    const thickBar = '━'.repeat(cols);
+    const thinBar = '─'.repeat(cols);
+
+    const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
     const filled = Math.round(progress * barLen);
     const empty = barLen - filled;
     const bar = C.voltBold + '█'.repeat(filled) + C.steel + '░'.repeat(empty) + C.reset;
 
     const spinner = spinners[frame % spinners.length];
-    const track = packetTracks[frame % packetTracks.length];
+    const trackPattern = packetTracks[frame % packetTracks.length];
     const stageIdx = Math.min(stages.length - 1, Math.floor((frame / 6) % stages.length));
     const stageText = stages[stageIdx];
 
-    process.stdout.write('\x1b[2J\x1b[0f');
-    renderAsciiHeader(`${C.bgVolt} ESTABLISHING TUNNEL ${C.reset}`);
+    const out = [];
+    renderAsciiHeaderToOut(out, `${C.bgVolt} ESTABLISHING TUNNEL ${C.reset}`, cols);
 
-    console.log(`  ${C.cyanBold}${track.trim()}${C.reset}`);
-    console.log(`${C.darkDivider}${THIN_BAR}${C.reset}`);
-    console.log(`  ${C.voltBold}${spinner}${C.reset} ${C.whiteBold}CREATING CLOUDFLARE SECURE TUNNEL${C.reset}  ${C.voltBold}${String(pct).padStart(3, ' ')}%${C.reset}`);
-    console.log(`  [${bar}]`);
-    console.log(`  ${C.slate}● ${stageText}${C.reset}`);
-    console.log(`${C.voltBold}${THICK_BAR}${C.reset}`);
+    const fullTrack = `  [LOCAL PC] ${trackPattern} [CLOUD AI] ✦`;
+    out.push(`  ${C.cyanBold}${fullTrack}${C.reset}`);
+    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
+    out.push(`  ${C.voltBold}${spinner}${C.reset} ${C.whiteBold}CREATING CLOUDFLARE SECURE TUNNEL${C.reset}  ${C.voltBold}${String(pct).padStart(3, ' ')}%${C.reset}`);
+    out.push(`  [${bar}]`);
+    out.push(`  ${C.slate}● ${stageText}${C.reset}`);
+    out.push(`${C.voltBold}${thickBar}${C.reset}`);
+
+    const clamped = out.slice(0, rows - 1);
+    process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
 
     frame++;
-    await new Promise(r => setTimeout(r, 70));
+    await new Promise(r => setTimeout(r, 60));
   }
 
   // Final confirmation frame
   const finalUrl = getTunnelUrlFn() || 'https://trycloudflare.com';
-  process.stdout.write('\x1b[2J\x1b[0f');
-  renderAsciiHeader(`${C.bgVolt} TUNNEL ACTIVE ${C.reset}`);
-  console.log(`  ${C.cyanBold}  [LOCAL PC] ═════════════════════ ( ✦ ) ══════════════════════ [CLOUD AI] ✦${C.reset}`);
-  console.log(`${C.darkDivider}${THIN_BAR}${C.reset}`);
-  console.log(`  ${C.voltBold}✓${C.reset} ${C.whiteBold}CLOUDFLARE TUNNEL CONNECTED${C.reset}  ${C.voltBold}100%${C.reset}`);
-  console.log(`  [${C.voltBold}${'█'.repeat(46)}${C.reset}]`);
-  console.log(`  ${C.voltBold}● MCP URL: ${C.cyanBold}${finalUrl}/mcp${C.reset} ${C.slate}(Copied to Clipboard!)${C.reset}`);
-  console.log(`${C.voltBold}${THICK_BAR}${C.reset}`);
+  const cols = getCols();
+  const rows = getRows();
+  const thickBar = '━'.repeat(cols);
+  const thinBar = '─'.repeat(cols);
+  const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
+
+  const out = [];
+  renderAsciiHeaderToOut(out, `${C.bgVolt} TUNNEL ACTIVE ${C.reset}`, cols);
+  out.push(`  ${C.cyanBold}  [LOCAL PC] ═════════════════════ ( ✦ ) ══════════════════════ [CLOUD AI] ✦${C.reset}`);
+  out.push(`${C.darkDivider}${thinBar}${C.reset}`);
+  out.push(`  ${C.voltBold}✓${C.reset} ${C.whiteBold}CLOUDFLARE TUNNEL CONNECTED${C.reset}  ${C.voltBold}100%${C.reset}`);
+  out.push(`  [${C.voltBold}${'█'.repeat(barLen)}${C.reset}]`);
+  out.push(`  ${C.voltBold}● MCP URL: ${C.cyanBold}${finalUrl}/mcp${C.reset} ${C.slate}(Copied to Clipboard!)${C.reset}`);
+  out.push(`${C.voltBold}${thickBar}${C.reset}`);
+
+  const clamped = out.slice(0, rows - 1);
+  process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
 
   await new Promise(r => setTimeout(r, 400));
-
-  process.stdout.write('\x1b[?25h');
-  process.stdout.write('\x1b[2J\x1b[0f');
 }
 
-/**
- * =========================================================================
- *  IN-CLI INTERACTIVE DIRECTORY NAVIGATOR
- *  Browse, explore, and pick folders purely inside the terminal window!
- * =========================================================================
- */
 function selectDirectoryInteractive(startDir) {
   return new Promise((resolve) => {
     isNavigatingFolders = true;
@@ -449,6 +515,9 @@ function selectDirectoryInteractive(startDir) {
     let isTypingPath = false;
     let typedPath = '';
     let errorMessage = '';
+
+    // Switch to Alternate Screen Buffer & hide cursor (locks viewport, ZERO scrollback!)
+    process.stdout.write('\x1b[?1049h\x1b[?25l');
 
     function getItems() {
       const items = [
@@ -484,58 +553,78 @@ function selectDirectoryInteractive(startDir) {
     let items = getItems();
 
     function renderNav() {
-      process.stdout.write('\x1b[2J\x1b[0f');
-      const w = UI_WIDTH;
-      const thinBar = '─'.repeat(w);
-      const thickBar = '━'.repeat(w);
+      const cols = getCols();
+      const rows = getRows();
+      const thickBar = '━'.repeat(cols);
+      const thinBar = '─'.repeat(cols);
 
-      // 1. First load Bridge ASCII Logo at top
-      renderAsciiHeader(`${C.bgVolt} DIRECTORY NAVIGATOR ${C.reset}`);
+      const out = [];
 
-      // 2. Down select the project
-      console.log(`  ${C.slate}Current Folder:${C.reset} ${C.voltBold}${currentDir}${C.reset}`);
-      console.log(`${C.darkDivider}${thinBar}${C.reset}`);
+      // 1. Header with full-width adaptive circuit
+      renderAsciiHeaderToOut(out, `${C.bgVolt} DIRECTORY NAVIGATOR ${C.reset}`, cols);
+
+      // 2. Current Folder row (with right-aligned counter)
+      const folderLeft = `  ${C.slate}Current Folder:${C.reset} ${C.voltBold}${currentDir}${C.reset}`;
+      const folderRight = `${C.steel}[${items.length} items]${C.reset}`;
+      const fSpaces = Math.max(2, cols - stripAnsi(folderLeft).length - stripAnsi(folderRight).length - 2);
+      out.push(folderLeft + ' '.repeat(fSpaces) + folderRight);
+      out.push(`${C.darkDivider}${thinBar}${C.reset}`);
 
       if (errorMessage) {
-        console.log(`  ${C.redBold}● [NOTE] ${errorMessage}${C.reset}`);
+        out.push(`  ${C.redBold}● [NOTE] ${errorMessage}${C.reset}`);
         errorMessage = '';
-        console.log(`${C.darkDivider}${thinBar}${C.reset}`);
+        out.push(`${C.darkDivider}${thinBar}${C.reset}`);
       }
 
       if (isTypingPath) {
-        console.log(`\n  ${C.voltBold}Type or Paste Directory Path:${C.reset}`);
-        console.log(`  > ${C.whiteBold}${typedPath}${C.reset}_\n`);
-        console.log(`  ${C.slate}[Enter] Confirm  |  [Esc] Back to Directory Browser${C.reset}`);
-        console.log(`${C.voltBold}${thickBar}${C.reset}`);
-        return;
-      }
-
-      // Scrolling window of items
-      const maxVisible = 10;
-      let startIdx = 0;
-      if (selectedIndex >= maxVisible) {
-        startIdx = selectedIndex - maxVisible + 1;
-      }
-      const visibleItems = items.slice(startIdx, startIdx + maxVisible);
-
-      visibleItems.forEach((item, relIdx) => {
-        const actualIdx = startIdx + relIdx;
-        const isSelected = actualIdx === selectedIndex;
-        if (isSelected) {
-          console.log(`  ${C.bgVolt} ► ${item.name.padEnd(70)} ${C.reset}`);
-        } else {
-          const color = item.type === 'select_current' ? C.voltBold : (item.type === 'parent' ? C.slate : C.white);
-          console.log(`    ${color}${item.name}${C.reset}`);
+        out.push('');
+        out.push(`  ${C.voltBold}Type or Paste Directory Path:${C.reset}`);
+        out.push(`  > ${C.whiteBold}${typedPath}${C.reset}_`);
+        out.push('');
+        out.push(`  ${C.slate}[Enter] Confirm  |  [Esc] Back to Directory Browser${C.reset}`);
+        out.push(`${C.voltBold}${thickBar}${C.reset}`);
+      } else {
+        // Scrolling window of items adapted to available screen height
+        const fixedLines = out.length + 5; // lines so far + footer lines
+        const maxVisible = Math.max(4, rows - fixedLines);
+        let startIdx = 0;
+        if (selectedIndex >= maxVisible) {
+          startIdx = selectedIndex - maxVisible + 1;
         }
-      });
+        const visibleItems = items.slice(startIdx, startIdx + maxVisible);
+        const itemWidth = Math.max(40, cols - 6);
 
-      console.log(`${C.darkDivider}${thinBar}${C.reset}`);
-      console.log(`  ${C.voltBold}[↑/↓]${C.reset} ${C.white}Navigate${C.reset}   ${C.voltBold}[Enter]${C.reset} ${C.white}Open Folder${C.reset}    ${C.voltBold}[Space]${C.reset} ${C.white}Select This Folder${C.reset}`);
-      console.log(`  ${C.voltBold}[T]${C.reset}   ${C.white}Type Path${C.reset}  ${C.voltBold}[Backspace]${C.reset} ${C.white}Up${C.reset}         ${C.voltBold}[Esc]${C.reset} ${C.white}Cancel${C.reset}`);
-      console.log(`${C.voltBold}${thickBar}${C.reset}`);
+        visibleItems.forEach((item, relIdx) => {
+          const actualIdx = startIdx + relIdx;
+          const isSelected = actualIdx === selectedIndex;
+          if (isSelected) {
+            out.push(`  ${C.bgVolt} ► ${item.name.padEnd(itemWidth)} ${C.reset}`);
+          } else {
+            const color = item.type === 'select_current' ? C.voltBold : (item.type === 'parent' ? C.steel : C.white);
+            out.push(`    ${color}${item.name.padEnd(itemWidth)}${C.reset}`);
+          }
+        });
+
+        out.push(`${C.darkDivider}${thinBar}${C.reset}`);
+        const navHelp = `${C.voltBold}[↑/↓]${C.reset} ${C.white}Navigate${C.reset}   ${C.voltBold}[Enter]${C.reset} ${C.white}Open Folder${C.reset}    ${C.voltBold}[Space]${C.reset} ${C.white}Select This Folder${C.reset}`;
+        const posIndicator = `${C.voltBold}[${selectedIndex + 1}/${items.length}]${C.reset}`;
+        const footerSpaces = Math.max(2, cols - stripAnsi(navHelp).length - stripAnsi(posIndicator).length - 4);
+        out.push(`  ${navHelp}${' '.repeat(footerSpaces)}${posIndicator}`);
+        out.push(`  ${C.voltBold}[T]${C.reset}   ${C.white}Type Path${C.reset}  ${C.voltBold}[Backspace]${C.reset} ${C.white}Up${C.reset}         ${C.voltBold}[Esc]${C.reset} ${C.white}Cancel${C.reset}`);
+        out.push(`${C.voltBold}${thickBar}${C.reset}`);
+      }
+
+      // In-place atomic redraw: cursor home (1,1) + clear + content (NO TRAILING NEWLINE!)
+      const clamped = out.slice(0, rows - 1);
+      process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
     }
 
     renderNav();
+
+    function onResize() {
+      renderNav();
+    }
+    process.stdout.on('resize', onResize);
 
     function onNavKey(str, key) {
       try {
@@ -571,35 +660,18 @@ function selectDirectoryInteractive(startDir) {
           return;
         }
 
+        // Navigation Mode
         if (key.name === 'up') {
-          if (items.length > 0) {
-            selectedIndex = (selectedIndex - 1 + items.length) % items.length;
-            renderNav();
-          }
+          selectedIndex = Math.max(0, selectedIndex - 1);
+          renderNav();
         } else if (key.name === 'down') {
-          if (items.length > 0) {
-            selectedIndex = (selectedIndex + 1) % items.length;
-            renderNav();
-          }
-        } else if (key.name === 'return') {
-          if (items.length === 0) return;
-          const item = items[selectedIndex];
-          if (!item) return;
-          if (item.type === 'select_current') {
-            cleanup();
-            resolve(item.fullPath);
-            return;
-          } else if (item.type === 'parent' || item.type === 'dir') {
-            currentDir = item.fullPath;
-            items = getItems();
-            selectedIndex = 0;
-            renderNav();
-          }
-        } else if (key.name === 'space' || key.name === 's') {
-          cleanup();
-          resolve(currentDir);
-          return;
-        } else if (key.name === 'backspace' || key.name === 'left') {
+          selectedIndex = Math.min(items.length - 1, selectedIndex + 1);
+          renderNav();
+        } else if (key.name === 't') {
+          isTypingPath = true;
+          typedPath = '';
+          renderNav();
+        } else if (key.name === 'backspace') {
           const parentDir = path.dirname(currentDir);
           if (parentDir && parentDir !== currentDir) {
             currentDir = parentDir;
@@ -607,21 +679,41 @@ function selectDirectoryInteractive(startDir) {
             selectedIndex = 0;
             renderNav();
           }
-        } else if (key.name === 't') {
-          isTypingPath = true;
-          typedPath = '';
-          renderNav();
-        } else if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
+        } else if (key.name === 'space') {
+          const sel = items[selectedIndex];
+          if (sel) {
+            cleanup();
+            resolve(sel.fullPath);
+          }
+        } else if (key.name === 'return') {
+          const sel = items[selectedIndex];
+          if (!sel) return;
+
+          if (sel.type === 'select_current') {
+            cleanup();
+            resolve(sel.fullPath);
+          } else if (sel.type === 'parent' || sel.type === 'dir') {
+            currentDir = sel.fullPath;
+            items = getItems();
+            selectedIndex = 0;
+            renderNav();
+          }
+        } else if (key.ctrl && key.name === 'c') {
           cleanup();
-          resolve(null);
+          cleanupAndExit();
+          return;
+        } else if (key.name === 'escape') {
+          cleanup();
+          resolve(currentDir);
         }
-      } catch (e) {
-        errorMessage = e.message;
+      } catch (err) {
+        errorMessage = 'Navigation error: ' + err.message;
         renderNav();
       }
     }
 
     function cleanup() {
+      process.stdout.removeListener('resize', onResize);
       process.stdin.removeListener('keypress', onNavKey);
       isNavigatingFolders = false;
     }
@@ -633,54 +725,62 @@ function selectDirectoryInteractive(startDir) {
 function renderDashboard() {
   if (isNavigatingFolders || isEstablishingTunnel) return;
 
-  // Clear terminal
-  process.stdout.write('\x1b[2J\x1b[0f');
+  const cols = getCols();
+  const rows = getRows();
+  const thickBar = '━'.repeat(cols);
+  const thinBar = '─'.repeat(cols);
 
-  const width = 72;
-  const bar = '─'.repeat(width);
+  const out = [];
 
   // 1. Full Bridge ASCII Emblem at top
-  renderAsciiHeader(`${C.voltBold}● STATUS: ONLINE${C.reset}`);
+  renderAsciiHeaderToOut(out, `${C.voltBold}● STATUS: ONLINE${C.reset}`, cols);
 
   // 2. Complete Live Screen Details
-  console.log(`  ${C.bgVolt} PROJECT ${C.reset}   ${C.whiteBold}${activeProjectDir || '(None selected)'}${C.reset}`);
-  console.log(`  ${C.bgVolt} JAILED ${C.reset}    ${C.voltBold}STRICTLY ENFORCED${C.reset} ${C.slate}(Zero access outside folder)${C.reset}`);
+  out.push(`  ${C.bgVolt} PROJECT ${C.reset}   ${C.whiteBold}${activeProjectDir || '(None selected)'}${C.reset}`);
+  out.push(`  ${C.bgVolt} JAILED ${C.reset}    ${C.voltBold}STRICTLY ENFORCED${C.reset} ${C.slate}(Zero access outside folder)${C.reset}`);
   
   if (mcpTunnelUrl) {
-    console.log(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.cyanBold}${mcpTunnelUrl}/mcp${C.reset}`);
+    out.push(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.cyanBold}${mcpTunnelUrl}/mcp${C.reset}`);
   } else {
-    console.log(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.slate}Establishing secure tunnel...${C.reset}`);
+    out.push(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.slate}Establishing secure tunnel...${C.reset}`);
   }
 
-  console.log(`${C.darkDivider}${bar}${C.reset}`);
+  out.push(`${C.darkDivider}${thinBar}${C.reset}`);
 
   if (flashNotification) {
-    console.log(`  ${flashNotification}`);
-    console.log(`${C.darkDivider}${bar}${C.reset}`);
+    out.push(`  ${flashNotification}`);
+    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
   }
 
   // Keyboard Shortcuts
-  console.log(`  ${C.voltBold}KEYBOARD ACTIONS:${C.reset}`);
-  console.log(`  ${C.voltBold}[C]${C.reset} ${C.white}Copy MCP URL${C.reset}          ${C.voltBold}[D]${C.reset} ${C.white}Browse & Switch Project Folder${C.reset}`);
-  console.log(`  ${C.voltBold}[L]${C.reset} ${C.white}Live Activity Logs (${showLiveLogs ? C.voltBold + 'ON' : C.slate + 'OFF'}${C.white})${C.reset}   ${C.voltBold}[Q]${C.reset} ${C.white}Stop Server & Exit${C.reset}`);
+  out.push(`  ${C.voltBold}KEYBOARD ACTIONS:${C.reset}`);
+  out.push(`  ${C.voltBold}[C]${C.reset} ${C.white}Copy MCP URL${C.reset}          ${C.voltBold}[D]${C.reset} ${C.white}Browse & Switch Project Folder${C.reset}`);
+  out.push(`  ${C.voltBold}[L]${C.reset} ${C.white}Live Activity Logs (${showLiveLogs ? C.voltBold + 'ON' : C.slate + 'OFF'}${C.white})${C.reset}   ${C.voltBold}[Q]${C.reset} ${C.white}Stop Server & Exit${C.reset}`);
 
-  console.log(`${C.voltBold}${thickBar}${C.reset}`);
+  out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   if (showLiveLogs) {
-    console.log(`  ${C.voltBold}LIVE HARNESS TRAFFIC & ACTIVITY LOGS:${C.reset}`);
-    const logsToShow = recentLogs.slice(-6);
+    out.push(`  ${C.voltBold}LIVE HARNESS TRAFFIC & ACTIVITY LOGS:${C.reset}`);
+    const maxLogs = Math.max(3, rows - out.length - 4);
+    const logsToShow = recentLogs.slice(-maxLogs);
     if (logsToShow.length === 0) {
-      console.log(`  ${C.slate}(Waiting for AI requests from Gemini, Claude, or ChatGPT...)${C.reset}`);
+      out.push(`  ${C.slate}(Waiting for AI requests from Gemini, Claude, or ChatGPT...)${C.reset}`);
     } else {
-      logsToShow.forEach(log => console.log(`  ${log}`));
+      logsToShow.forEach(log => out.push(`  ${log}`));
     }
-    console.log(`${C.darkDivider}${bar}${C.reset}`);
+    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
   } else {
-    console.log(`  ${C.slate}Supported:${C.reset} ${C.white}Google Gemini${C.reset} ${C.darkDivider}•${C.reset} ${C.white}Claude Web / Desktop${C.reset} ${C.darkDivider}•${C.reset} ${C.white}ChatGPT Custom Tools${C.reset}`);
+    out.push(`  ${C.slate}Supported:${C.reset} ${C.white}Google Gemini${C.reset} ${C.darkDivider}•${C.reset} ${C.white}Claude Web / Desktop${C.reset} ${C.darkDivider}•${C.reset} ${C.white}ChatGPT Custom Tools${C.reset}`);
   }
+
+  const clamped = out.slice(0, rows - 1);
+  process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
 }
 
 async function startBridge() {
+  // Enter Alternate Screen Buffer & hide cursor immediately (locks viewport, zero scrollback!)
+  process.stdout.write('\x1b[?1049h\x1b[?25l');
+
   // Ensure readline keypress setup
   readline.emitKeypressEvents(process.stdin);
   if (process.stdin.isTTY) {
@@ -791,6 +891,7 @@ async function startBridge() {
 }
 
 function cleanupAndExit() {
+  process.stdout.write('\x1b[?1049l\x1b[?25h');
   process.stdout.write('\n\n' + C.voltBold + 'Stopping Bridge and releasing ports...' + C.reset + '\n');
   if (serverProcess) {
     try { serverProcess.kill(); } catch (e) {}
@@ -807,10 +908,12 @@ process.on('SIGINT', cleanupAndExit);
 process.on('SIGTERM', cleanupAndExit);
 
 process.on('uncaughtException', (err) => {
+  process.stdout.write('\x1b[?1049l\x1b[?25h');
   console.error('\n' + C.redBold + '● [UNCAUGHT ERROR] ' + C.reset + err.message + '\n' + (err.stack || ''));
 });
 
 process.on('unhandledRejection', (reason) => {
+  process.stdout.write('\x1b[?1049l\x1b[?25h');
   console.error('\n' + C.redBold + '● [UNHANDLED REJECTION] ' + C.reset + reason);
 });
 
