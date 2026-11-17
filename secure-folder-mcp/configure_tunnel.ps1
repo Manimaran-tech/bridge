@@ -15,7 +15,7 @@ if (-not (Test-Path $serverScript)) {
 
 # Resolve canonical paths
 $resolvedProject = (Resolve-Path $ProjectDir).Path
-Write-Host "`n=== Secure Folder MCP: Claude Desktop Configurator ===" -ForegroundColor Cyan
+Write-Host "`n=== Secure Folder MCP: Universal Tunnel Configurator ===" -ForegroundColor Cyan
 Write-Host "Sandboxing LLM to folder: $resolvedProject" -ForegroundColor Green
 Write-Host "Server executable:       $serverScript" -ForegroundColor Gray
 

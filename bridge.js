@@ -11,6 +11,8 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const https = require('https');
+const os = require('os');
 const readline = require('readline');
 const { spawn, execSync } = require('child_process');
 
@@ -58,7 +60,85 @@ const C = {
 
 const scriptDir = __dirname;
 const serverScript = path.join(scriptDir, 'secure-folder-mcp', 'server.js');
-const cloudflaredBin = path.join(scriptDir, 'cloudflared.exe');
+
+function getCloudflaredDownloadUrl() {
+  const platform = process.platform;
+  const arch = process.arch;
+
+  if (platform === 'win32') {
+    return 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe';
+  } else if (platform === 'darwin') {
+    return arch === 'arm64'
+      ? 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64'
+      : 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64';
+  } else if (platform === 'linux') {
+    return arch === 'arm64'
+      ? 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64'
+      : 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64';
+  }
+  return null;
+}
+
+function downloadBinaryWithRedirects(url, destPath) {
+  return new Promise((resolve, reject) => {
+    function get(currentUrl) {
+      https.get(currentUrl, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          get(res.headers.location);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error(`Failed to download binary: HTTP ${res.statusCode}`));
+          return;
+        }
+        const fileStream = fs.createWriteStream(destPath);
+        res.pipe(fileStream);
+        fileStream.on('finish', () => {
+          fileStream.close(() => resolve(destPath));
+        });
+        fileStream.on('error', reject);
+      }).on('error', reject);
+    }
+    get(url);
+  });
+}
+
+async function ensureCloudflaredBinary() {
+  const exeName = process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared';
+  // 1. Local directory check
+  const localPath = path.join(scriptDir, exeName);
+  if (fs.existsSync(localPath)) return localPath;
+
+  // 2. System PATH check
+  try {
+    const cmd = process.platform === 'win32' ? 'where.exe cloudflared' : 'which cloudflared';
+    const found = execSync(cmd, { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0].trim();
+    if (found && fs.existsSync(found)) return found;
+  } catch (e) {}
+
+  // 3. User cache directory (~/.bridge/bin/)
+  const userBridgeDir = path.join(os.homedir(), '.bridge', 'bin');
+  const cachedPath = path.join(userBridgeDir, exeName);
+  if (fs.existsSync(cachedPath)) return cachedPath;
+
+  // 4. Download on-demand (one-time setup for new machines)
+  if (!fs.existsSync(userBridgeDir)) {
+    fs.mkdirSync(userBridgeDir, { recursive: true });
+  }
+
+  const downloadUrl = getCloudflaredDownloadUrl();
+  if (!downloadUrl) {
+    throw new Error(`Unsupported platform: ${process.platform} (${process.arch})`);
+  }
+
+  process.stdout.write(`\n  ${C.voltBold}● [FIRST RUN]${C.reset} ${C.white}Installing Cloudflare tunnel binary for ${process.platform}-${process.arch}...${C.reset}\n`);
+  await downloadBinaryWithRedirects(downloadUrl, cachedPath);
+  if (process.platform !== 'win32') {
+    fs.chmodSync(cachedPath, 0o755);
+  }
+  process.stdout.write(`  ${C.voltBold}✓ [READY]${C.reset} ${C.white}Tunnel binary installed successfully!${C.reset}\n\n`);
+  return cachedPath;
+}
 
 const UI_WIDTH = 80;
 const THIN_BAR = '─'.repeat(UI_WIDTH);
@@ -724,7 +804,8 @@ async function startBridge() {
 
   // Step 5: Start Cloudflare Tunnel
   isEstablishingTunnel = true;
-  tunnelProcess = spawn(cloudflaredBin, ['tunnel', '--url', 'http://localhost:3000'], {
+  const activeCloudflaredBin = await ensureCloudflaredBinary();
+  tunnelProcess = spawn(activeCloudflaredBin, ['tunnel', '--url', 'http://localhost:3000'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   });
