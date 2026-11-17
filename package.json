@@ -1,11 +1,19 @@
 {
   "name": "@markmayandi/bridge",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Universal Local-to-Web AI Coding Harness — Connect Local Workspaces to Gemini, Claude, ChatGPT & DeepSeek via Secure MCP",
   "main": "bridge.js",
   "bin": {
     "bridge": "bridge.js"
   },
+  "files": [
+    "bridge.js",
+    "bridge.bat",
+    "secure-folder-mcp/server.js",
+    "secure-folder-mcp/package.json",
+    "secure-folder-mcp/configure_tunnel.bat",
+    "secure-folder-mcp/configure_tunnel.ps1"
+  ],
   "scripts": {
     "start": "node bridge.js",
     "test": "node --test secure-folder-mcp/server.js"
