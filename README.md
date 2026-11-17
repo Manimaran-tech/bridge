@@ -115,6 +115,12 @@ Cloud-based AI models cannot safely access files on your physical machine withou
 
 ---
 
+## Acknowledgements & Credits
+
+Bridge builds upon foundational open-source architecture and local daemon patterns inspired by the [DeepSeek](https://github.com/deepseek-ai) harness community. We extend our sincere gratitude to the open-source AI developer ecosystem for advancing local tooling.
+
+---
+
 ## License
 
 Distributed under the **MIT License**. See `LICENSE` for details.
