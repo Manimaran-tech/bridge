@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0e17" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#05070c" />
+    </linearGradient>
+
+    <!-- Cyan to Violet Gradient for Bridge -->
+    <linearGradient id="bridgeBeam" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="50%" stop-color="#4facfe" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+
+    <!-- Cyan Glow -->
+    <linearGradient id="cyanGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+
+    <!-- Purple/AI Spark Glow -->
+    <linearGradient id="aiGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f472b6" />
+      <stop offset="50%" stop-color="#c084fc" />
+      <stop offset="100%" stop-color="#818cf8" />
+    </linearGradient>
+
+    <!-- Filters for Bloom/Glow -->
+    <filter id="glowEffect" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="22" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Icon Container -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" stroke="#1e293b" stroke-width="3" />
+
+  <!-- Subtle Ambient Glow Orbs in Background -->
+  <circle cx="160" cy="256" r="110" fill="#0284c7" opacity="0.12" filter="url(#softGlow)" />
+  <circle cx="352" cy="256" r="110" fill="#a855f7" opacity="0.15" filter="url(#softGlow)" />
+
+  <!-- Ambient Grid / Network Lines (Subtle) -->
+  <g stroke="#334155" stroke-width="1.2" opacity="0.25">
+    <line x1="80" y1="180" x2="432" y2="180" stroke-dasharray="6,6" />
+    <line x1="80" y1="256" x2="432" y2="256" stroke-dasharray="4,4" />
+    <line x1="80" y1="332" x2="432" y2="332" stroke-dasharray="6,6" />
+    <line x1="160" y1="100" x2="160" y2="412" stroke-dasharray="6,6" />
+    <line x1="256" y1="100" x2="256" y2="412" stroke-dasharray="4,4" />
+    <line x1="352" y1="100" x2="352" y2="412" stroke-dasharray="6,6" />
+  </g>
+
+  <!-- Left Pillar / Local Terminal Bracket -->
+  <g filter="url(#glowEffect)">
+    <!-- Local Terminal Chassis -->
+    <path d="M 190 160 L 135 160 C 120 160 110 170 110 185 L 110 327 C 110 342 120 352 135 352 L 190 352" 
+          fill="none" stroke="url(#cyanGlow)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+    
+    <!-- Local Code / Drive Nodes -->
+    <circle cx="110" cy="220" r="6" fill="#38bdf8" />
+    <circle cx="110" cy="256" r="8" fill="#00f2fe" />
+    <circle cx="110" cy="292" r="6" fill="#38bdf8" />
+
+    <!-- Terminal Prompt Icon `>_` inside local zone -->
+    <path d="M 135 238 L 155 256 L 135 274" fill="none" stroke="#00f2fe" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+    <line x1="165" y1="274" x2="180" y2="274" stroke="#00f2fe" stroke-width="7" stroke-linecap="round" />
+  </g>
+
+  <!-- Right Pillar / Cloud AI Spark Constellation -->
+  <g filter="url(#glowEffect)">
+    <!-- Web AI Star / Spark Shape -->
+    <path d="M 370 160 L 425 160 C 440 160 450 170 450 185 L 450 327 C 450 342 440 352 425 352 L 370 352" 
+          fill="none" stroke="url(#aiGlow)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- AI Starburst Core -->
+    <g transform="translate(370, 256)">
+      <!-- 4-point Diamond Star -->
+      <path d="M 0 -42 C 0 -10 10 0 42 0 C 10 0 0 10 0 42 C 0 10 -10 0 -42 0 C -10 0 0 -10 0 -42 Z" 
+            fill="url(#aiGlow)" />
+      <!-- Star Center Core -->
+      <circle cx="0" cy="0" r="9" fill="#ffffff" />
+    </g>
+    
+    <circle cx="450" cy="220" r="6" fill="#f472b6" />
+    <circle cx="450" cy="256" r="8" fill="#c084fc" />
+    <circle cx="450" cy="292" r="6" fill="#818cf8" />
+  </g>
+
+  <!-- THE BRIDGE (Central Hyper-Beam Arch) -->
+  <g filter="url(#glowEffect)">
+    <!-- Outer Quantum Arc (Upper) -->
+    <path d="M 180 215 C 225 165 287 165 332 215" 
+          fill="none" stroke="url(#bridgeBeam)" stroke-width="9" stroke-linecap="round" opacity="0.85" />
+
+    <!-- Main High-Speed Quantum Highway (Center) -->
+    <path d="M 185 256 L 327 256" 
+          fill="none" stroke="url(#bridgeBeam)" stroke-width="16" stroke-linecap="round" />
+
+    <!-- White Inner Core Beam for intense laser brightness -->
+    <path d="M 200 256 L 312 256" 
+          fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.95" />
+
+    <!-- Outer Quantum Arc (Lower) -->
+    <path d="M 180 297 C 225 347 287 347 332 297" 
+          fill="none" stroke="url(#bridgeBeam)" stroke-width="9" stroke-linecap="round" opacity="0.85" />
+  </g>
+
+  <!-- Central Nexus Portal (Where Local meets LLM) -->
+  <g transform="translate(256, 256)" filter="url(#glowEffect)">
+    <circle cx="0" cy="0" r="24" fill="#0f172a" stroke="url(#bridgeBeam)" stroke-width="6" />
+    <circle cx="0" cy="0" r="10" fill="#ffffff" />
+    <!-- Dynamic Packet Pulses -->
+    <circle cx="-38" cy="0" r="5" fill="#00f2fe" />
+    <circle cx="38" cy="0" r="5" fill="#f472b6" />
+  </g>
+
+  <!-- Subtitle Text "BRIDGE" (Tech Monospace) -->
+  <text x="256" y="420" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'JetBrains Mono', monospace" font-size="28" font-weight="800" letter-spacing="8" fill="#e2e8f0" opacity="0.9">
+    BRIDGE
+  </text>
+  <text x="256" y="445" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600" letter-spacing="3" fill="#64748b">
+    LOCAL &#x2194; WEB AI HARNESS
+  </text>
+</svg>

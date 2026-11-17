@@ -1,0 +1,38 @@
+{
+  "name": "@manimaran-tech/bridge",
+  "version": "1.0.0",
+  "description": "Universal Local-to-Web AI Coding Harness — Connect Local Workspaces to Gemini, Claude, ChatGPT & DeepSeek via Secure MCP",
+  "main": "bridge.js",
+  "bin": {
+    "bridge": "./bridge.js"
+  },
+  "scripts": {
+    "start": "node bridge.js",
+    "test": "node --test secure-folder-mcp/server.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "gemini",
+    "claude",
+    "chatgpt",
+    "deepseek",
+    "tunnel",
+    "local-coding-harness",
+    "developer-tools"
+  ],
+  "author": "Manimaran",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Manimaran-tech/bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Manimaran-tech/bridge/issues"
+  },
+  "homepage": "https://github.com/Manimaran-tech/bridge#readme"
+}

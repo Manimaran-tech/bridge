@@ -1,0 +1,26 @@
+{
+  "name": "secure-folder-mcp",
+  "version": "1.0.0",
+  "description": "Secure, folder-sandboxed File Read & Edit Model Context Protocol (MCP) server for Claude, Gemini, ChatGPT, DeepSeek, and other LLMs.",
+  "main": "server.js",
+  "bin": {
+    "secure-fs-mcp": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test_client.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "chatgpt",
+    "gemini",
+    "deepseek",
+    "filesystem",
+    "sandbox",
+    "security"
+  ],
+  "author": "Antigravity",
+  "license": "MIT"
+}
