@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./images/bridge_logo.jpg" alt="Bridge Logo" width="460" style="border-radius: 8px;" />
+<img src="./images/bridge_logo.png" alt="Bridge Logo" width="520" />
 
 # Bridge
 
