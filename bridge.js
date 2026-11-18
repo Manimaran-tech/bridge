@@ -140,7 +140,7 @@ async function ensureCloudflaredBinary() {
   return cachedPath;
 }
 
-const getCols = () => Math.max(76, process.stdout.columns || 100);
+const getCols = () => Math.max(84, process.stdout.columns || 100);
 const getRows = () => Math.max(20, process.stdout.rows || 30);
 
 function stripAnsi(s) {
@@ -231,8 +231,9 @@ function switchProjectDirectory(newPath) {
 }
 
 function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
-  const thickBar = '━'.repeat(cols);
-  const thinBar = '─'.repeat(cols);
+  const barWidth = Math.max(76, cols - 2);
+  const thickBar = '━'.repeat(barWidth);
+  const thinBar = '─'.repeat(barWidth);
 
   const baseLines = [
     `  ${C.voltBold}██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗${C.reset}    ${C.steel}╔══════╗${C.reset}          ${C.cyan}╔══╗  ╔══╗  ${C.reset}`,
@@ -243,29 +244,39 @@ function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
     `  ${C.voltBold}╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝${C.reset}   ${C.voltBold}╚════╝             ╚═════════╝ ${C.reset}`
   ];
 
-  const baseWidth = 76;
-  const extra = Math.max(0, cols - baseWidth - 4);
-
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
-  if (extra >= 8) {
-    const ext1 = `${C.cyan}═`.repeat(extra - 1) + `╗${C.reset}`;
-    const tag1 = ' [ANYCAST EDGE] ';
-    const ext2 = ' '.repeat(Math.max(0, extra - tag1.length - 1)) + `${C.steel}${tag1}${C.cyan}║${C.reset}`;
-    const tag2 = ' ✦ MCP TUNNEL ✦ ';
-    const ext3 = `${C.cyan}─`.repeat(Math.max(0, extra - tag2.length - 1)) + `${C.voltBold}${tag2}${C.cyan}║${C.reset}`;
-    const tag3 = ' [AES-256-GCM] ';
-    const ext4 = `${C.cyan}═`.repeat(Math.max(0, extra - tag3.length - 1)) + `${C.steel}${tag3}${C.cyan}║${C.reset}`;
-    const tag4 = ' [LOCAL SANDBOX] ';
-    const ext5 = ' '.repeat(Math.max(0, extra - tag4.length - 1)) + `${C.steel}${tag4}${C.cyan}║${C.reset}`;
-    const ext6 = `${C.cyan}═`.repeat(extra - 1) + `╝${C.reset}`;
+  const targetWidth = barWidth;
+  const baseLen = 80;
 
-    out.push(baseLines[0] + ext1);
-    out.push(baseLines[1] + ext2);
-    out.push(baseLines[2] + ext3);
-    out.push(baseLines[3] + ext4);
-    out.push(baseLines[4] + ext5);
-    out.push(baseLines[5] + ext6);
+  if (targetWidth >= 106) {
+    const ext0 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╗${C.reset}`;
+    const ext1 = ' '.repeat(targetWidth - baseLen - 17) + `${C.steel} [ANYCAST EDGE] ${C.cyan}║${C.reset}`;
+    const ext2 = `${C.cyan}${'─'.repeat(targetWidth - baseLen - 17)}${C.voltBold} ✦ MCP TUNNEL ✦ ${C.cyan}║${C.reset}`;
+    const ext3 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 16)}${C.steel} [AES-256-GCM] ${C.cyan}║${C.reset}`;
+    const ext4 = ' '.repeat(targetWidth - baseLen - 18) + `${C.steel} [LOCAL SANDBOX] ${C.cyan}║${C.reset}`;
+    const ext5 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╝${C.reset}`;
+
+    out.push(baseLines[0] + ext0);
+    out.push(baseLines[1] + ext1);
+    out.push(baseLines[2] + ext2);
+    out.push(baseLines[3] + ext3);
+    out.push(baseLines[4] + ext4);
+    out.push(baseLines[5] + ext5);
+  } else if (targetWidth > baseLen) {
+    const ext0 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╗${C.reset}`;
+    const ext1 = ' '.repeat(targetWidth - baseLen - 1) + `${C.cyan}║${C.reset}`;
+    const ext2 = `${C.cyan}${'─'.repeat(targetWidth - baseLen - 1)}╢${C.reset}`;
+    const ext3 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╢${C.reset}`;
+    const ext4 = ' '.repeat(targetWidth - baseLen - 1) + `${C.cyan}║${C.reset}`;
+    const ext5 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╝${C.reset}`;
+
+    out.push(baseLines[0] + ext0);
+    out.push(baseLines[1] + ext1);
+    out.push(baseLines[2] + ext2);
+    out.push(baseLines[3] + ext3);
+    out.push(baseLines[4] + ext4);
+    out.push(baseLines[5] + ext5);
   } else {
     baseLines.forEach(l => out.push(l));
   }
@@ -273,9 +284,9 @@ function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   if (badgeText) {
-    const rightInfo = `${C.steel}v1.0.6 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
+    const rightInfo = `${C.steel}v1.0.7 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
     const leftText = `  ${badgeText}`;
-    const spaceCount = Math.max(2, cols - stripAnsi(leftText).length - stripAnsi(rightInfo).length - 2);
+    const spaceCount = Math.max(2, barWidth - stripAnsi(leftText).length - stripAnsi(rightInfo).length);
     out.push(leftText + ' '.repeat(spaceCount) + rightInfo);
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
   }
@@ -325,16 +336,17 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
     const cols = getCols();
     const rows = getRows();
 
-    const thickBar = '━'.repeat(cols);
-    const thinBar = '─'.repeat(cols);
+    const barWidth = Math.max(76, cols - 2);
+    const thickBar = '━'.repeat(barWidth);
+    const thinBar = '─'.repeat(barWidth);
 
     const out = [];
 
     // Full-width top frame
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
     const topHeader = `  ${C.voltBold}BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS${C.reset}`;
-    const topVersion = `${C.steel}v1.0.6  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
-    const topSpaces = Math.max(2, cols - stripAnsi(topHeader).length - stripAnsi(topVersion).length);
+    const topVersion = `${C.steel}v1.0.7  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
+    const topSpaces = Math.max(2, barWidth - stripAnsi(topHeader).length - stripAnsi(topVersion).length);
     out.push(topHeader + ' '.repeat(topSpaces) + topVersion);
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
 
@@ -390,7 +402,7 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
 
     // Clamped strictly to rows - 1, in-place redraw with cursor home (NO trailing newline!)
     const clamped = out.slice(0, rows - 1);
-    process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
+    process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
 
     if (progress >= 1.0) {
       break;
@@ -453,8 +465,9 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
 
     const cols = getCols();
     const rows = getRows();
-    const thickBar = '━'.repeat(cols);
-    const thinBar = '─'.repeat(cols);
+    const barWidth = Math.max(76, cols - 2);
+    const thickBar = '━'.repeat(barWidth);
+    const thinBar = '─'.repeat(barWidth);
 
     const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
     const filled = Math.round(progress * barLen);
@@ -478,7 +491,7 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
     const clamped = out.slice(0, rows - 1);
-    process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
+    process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
 
     frame++;
     await new Promise(r => setTimeout(r, 60));
@@ -488,8 +501,9 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
   const finalUrl = getTunnelUrlFn() || 'https://trycloudflare.com';
   const cols = getCols();
   const rows = getRows();
-  const thickBar = '━'.repeat(cols);
-  const thinBar = '─'.repeat(cols);
+  const barWidth = Math.max(76, cols - 2);
+  const thickBar = '━'.repeat(barWidth);
+  const thinBar = '─'.repeat(barWidth);
   const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
 
   const out = [];
@@ -502,7 +516,7 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   const clamped = out.slice(0, rows - 1);
-  process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
+  process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
 
   await new Promise(r => setTimeout(r, 400));
 }
@@ -555,8 +569,9 @@ function selectDirectoryInteractive(startDir) {
     function renderNav() {
       const cols = getCols();
       const rows = getRows();
-      const thickBar = '━'.repeat(cols);
-      const thinBar = '─'.repeat(cols);
+      const barWidth = Math.max(76, cols - 2);
+      const thickBar = '━'.repeat(barWidth);
+      const thinBar = '─'.repeat(barWidth);
 
       const out = [];
 
@@ -566,7 +581,7 @@ function selectDirectoryInteractive(startDir) {
       // 2. Current Folder row (with right-aligned counter)
       const folderLeft = `  ${C.slate}Current Folder:${C.reset} ${C.voltBold}${currentDir}${C.reset}`;
       const folderRight = `${C.steel}[${items.length} items]${C.reset}`;
-      const fSpaces = Math.max(2, cols - stripAnsi(folderLeft).length - stripAnsi(folderRight).length - 2);
+      const fSpaces = Math.max(2, barWidth - stripAnsi(folderLeft).length - stripAnsi(folderRight).length);
       out.push(folderLeft + ' '.repeat(fSpaces) + folderRight);
       out.push(`${C.darkDivider}${thinBar}${C.reset}`);
 
@@ -592,7 +607,7 @@ function selectDirectoryInteractive(startDir) {
           startIdx = selectedIndex - maxVisible + 1;
         }
         const visibleItems = items.slice(startIdx, startIdx + maxVisible);
-        const itemWidth = Math.max(40, cols - 6);
+        const itemWidth = Math.max(40, barWidth - 6);
 
         visibleItems.forEach((item, relIdx) => {
           const actualIdx = startIdx + relIdx;
@@ -608,7 +623,7 @@ function selectDirectoryInteractive(startDir) {
         out.push(`${C.darkDivider}${thinBar}${C.reset}`);
         const navHelp = `${C.voltBold}[↑/↓]${C.reset} ${C.white}Navigate${C.reset}   ${C.voltBold}[Enter]${C.reset} ${C.white}Open Folder${C.reset}    ${C.voltBold}[Space]${C.reset} ${C.white}Select This Folder${C.reset}`;
         const posIndicator = `${C.voltBold}[${selectedIndex + 1}/${items.length}]${C.reset}`;
-        const footerSpaces = Math.max(2, cols - stripAnsi(navHelp).length - stripAnsi(posIndicator).length - 4);
+        const footerSpaces = Math.max(2, barWidth - stripAnsi(navHelp).length - stripAnsi(posIndicator).length);
         out.push(`  ${navHelp}${' '.repeat(footerSpaces)}${posIndicator}`);
         out.push(`  ${C.voltBold}[T]${C.reset}   ${C.white}Type Path${C.reset}  ${C.voltBold}[Backspace]${C.reset} ${C.white}Up${C.reset}         ${C.voltBold}[Esc]${C.reset} ${C.white}Cancel${C.reset}`);
         out.push(`${C.voltBold}${thickBar}${C.reset}`);
@@ -616,7 +631,7 @@ function selectDirectoryInteractive(startDir) {
 
       // In-place atomic redraw: cursor home (1,1) + clear + content (NO TRAILING NEWLINE!)
       const clamped = out.slice(0, rows - 1);
-      process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
+      process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
     }
 
     renderNav();
@@ -727,8 +742,9 @@ function renderDashboard() {
 
   const cols = getCols();
   const rows = getRows();
-  const thickBar = '━'.repeat(cols);
-  const thinBar = '─'.repeat(cols);
+  const barWidth = Math.max(76, cols - 2);
+  const thickBar = '━'.repeat(barWidth);
+  const thinBar = '─'.repeat(barWidth);
 
   const out = [];
 
@@ -774,7 +790,7 @@ function renderDashboard() {
   }
 
   const clamped = out.slice(0, rows - 1);
-  process.stdout.write('\x1b[H\x1b[2J' + clamped.join('\n'));
+  process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
 }
 
 async function startBridge() {
