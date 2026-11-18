@@ -140,7 +140,7 @@ async function ensureCloudflaredBinary() {
   return cachedPath;
 }
 
-const getCols = () => Math.max(84, process.stdout.columns || 100);
+const getCols = () => Math.max(80, process.stdout.columns || 100);
 const getRows = () => Math.max(20, process.stdout.rows || 30);
 
 function stripAnsi(s) {
@@ -231,60 +231,30 @@ function switchProjectDirectory(newPath) {
 }
 
 function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
-  const barWidth = Math.max(76, cols - 2);
+  const barWidth = Math.max(78, cols - 2);
   const thickBar = '━'.repeat(barWidth);
   const thinBar = '─'.repeat(barWidth);
 
   const baseLines = [
-    `  ${C.voltBold}██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗${C.reset}    ${C.steel}╔══════╗${C.reset}          ${C.cyan}╔══╗  ╔══╗  ${C.reset}`,
-    `  ${C.voltBold}██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝${C.reset}    ${C.steel}║ ${C.white}>_ ${C.voltBold}█${C.steel} ║${C.reset}        ${C.cyan}╔═╝  ╚══╝  ╚═╗${C.reset}`,
-    `  ${C.voltBold}██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗  ${C.reset}  ${C.voltBold}╔╩══════╩═╗${C.reset}     ${C.cyan}╔╝   ${C.voltBold}✦${C.cyanBold} LLM${C.cyan}    ╚╗${C.reset}`,
-    `  ${C.voltBold}██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝  ${C.reset}  ${C.voltBold}║    ╚════╬═════╬════╝         ║${C.reset}`,
-    `  ${C.voltBold}██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗${C.reset}  ${C.voltBold}╚╗    ╔═══╩═════╩═══╗         ╔╝${C.reset}`,
-    `  ${C.voltBold}╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝${C.reset}   ${C.voltBold}╚════╝             ╚═════════╝ ${C.reset}`
+    `${C.voltBold}██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗${C.reset}    ${C.steel}╔══════╗${C.reset}          ${C.cyan}╔══╗  ╔══╗${C.reset}`,
+    `${C.voltBold}██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝${C.reset}    ${C.steel}║ ${C.white}>_ ${C.voltBold}█${C.steel} ║${C.reset}        ${C.cyan}╔═╝  ╚══╝  ╚═╗${C.reset}`,
+    `${C.voltBold}██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗  ${C.reset}  ${C.voltBold}╔╩══════╩═╗${C.reset}     ${C.cyan}╔╝   ${C.voltBold}✦${C.cyanBold} LLM${C.cyan}    ╚╗${C.reset}`,
+    `${C.voltBold}██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝  ${C.reset}  ${C.voltBold}║    ╚════╬═════╬════╝         ║${C.reset}`,
+    `${C.voltBold}██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗${C.reset}  ${C.voltBold}╚╗    ╔═══╩═════╩═══╗         ╔╝${C.reset}`,
+    `${C.voltBold}╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝${C.reset}   ${C.voltBold}╚════╝             ╚═════════╝${C.reset}`
   ];
 
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
-  const targetWidth = barWidth;
-  const baseLen = 80;
-
-  if (targetWidth >= 106) {
-    const ext0 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╗${C.reset}`;
-    const ext1 = ' '.repeat(targetWidth - baseLen - 17) + `${C.steel} [ANYCAST EDGE] ${C.cyan}║${C.reset}`;
-    const ext2 = `${C.cyan}${'─'.repeat(targetWidth - baseLen - 17)}${C.voltBold} ✦ MCP TUNNEL ✦ ${C.cyan}║${C.reset}`;
-    const ext3 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 16)}${C.steel} [AES-256-GCM] ${C.cyan}║${C.reset}`;
-    const ext4 = ' '.repeat(targetWidth - baseLen - 18) + `${C.steel} [LOCAL SANDBOX] ${C.cyan}║${C.reset}`;
-    const ext5 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╝${C.reset}`;
-
-    out.push(baseLines[0] + ext0);
-    out.push(baseLines[1] + ext1);
-    out.push(baseLines[2] + ext2);
-    out.push(baseLines[3] + ext3);
-    out.push(baseLines[4] + ext4);
-    out.push(baseLines[5] + ext5);
-  } else if (targetWidth > baseLen) {
-    const ext0 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╗${C.reset}`;
-    const ext1 = ' '.repeat(targetWidth - baseLen - 1) + `${C.cyan}║${C.reset}`;
-    const ext2 = `${C.cyan}${'─'.repeat(targetWidth - baseLen - 1)}╢${C.reset}`;
-    const ext3 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╢${C.reset}`;
-    const ext4 = ' '.repeat(targetWidth - baseLen - 1) + `${C.cyan}║${C.reset}`;
-    const ext5 = `${C.cyan}${'═'.repeat(targetWidth - baseLen - 1)}╝${C.reset}`;
-
-    out.push(baseLines[0] + ext0);
-    out.push(baseLines[1] + ext1);
-    out.push(baseLines[2] + ext2);
-    out.push(baseLines[3] + ext3);
-    out.push(baseLines[4] + ext4);
-    out.push(baseLines[5] + ext5);
-  } else {
-    baseLines.forEach(l => out.push(l));
-  }
+  // Cleanly center the iconic Bridge emblem inside the full-width frame
+  const emblemWidth = 78;
+  const leftPad = ' '.repeat(Math.max(1, Math.floor((barWidth - emblemWidth) / 2)));
+  baseLines.forEach(line => out.push(leftPad + line));
 
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   if (badgeText) {
-    const rightInfo = `${C.steel}v1.0.7 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
+    const rightInfo = `${C.steel}v1.0.8 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
     const leftText = `  ${badgeText}`;
     const spaceCount = Math.max(2, barWidth - stripAnsi(leftText).length - stripAnsi(rightInfo).length);
     out.push(leftText + ' '.repeat(spaceCount) + rightInfo);
@@ -336,7 +306,7 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
     const cols = getCols();
     const rows = getRows();
 
-    const barWidth = Math.max(76, cols - 2);
+    const barWidth = Math.max(78, cols - 2);
     const thickBar = '━'.repeat(barWidth);
     const thinBar = '─'.repeat(barWidth);
 
@@ -345,7 +315,7 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
     // Full-width top frame
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
     const topHeader = `  ${C.voltBold}BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS${C.reset}`;
-    const topVersion = `${C.steel}v1.0.7  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
+    const topVersion = `${C.steel}v1.0.8  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
     const topSpaces = Math.max(2, barWidth - stripAnsi(topHeader).length - stripAnsi(topVersion).length);
     out.push(topHeader + ' '.repeat(topSpaces) + topVersion);
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
@@ -465,7 +435,7 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
 
     const cols = getCols();
     const rows = getRows();
-    const barWidth = Math.max(76, cols - 2);
+    const barWidth = Math.max(78, cols - 2);
     const thickBar = '━'.repeat(barWidth);
     const thinBar = '─'.repeat(barWidth);
 
@@ -501,7 +471,7 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
   const finalUrl = getTunnelUrlFn() || 'https://trycloudflare.com';
   const cols = getCols();
   const rows = getRows();
-  const barWidth = Math.max(76, cols - 2);
+  const barWidth = Math.max(78, cols - 2);
   const thickBar = '━'.repeat(barWidth);
   const thinBar = '─'.repeat(barWidth);
   const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
@@ -569,7 +539,7 @@ function selectDirectoryInteractive(startDir) {
     function renderNav() {
       const cols = getCols();
       const rows = getRows();
-      const barWidth = Math.max(76, cols - 2);
+      const barWidth = Math.max(78, cols - 2);
       const thickBar = '━'.repeat(barWidth);
       const thinBar = '─'.repeat(barWidth);
 
@@ -619,6 +589,11 @@ function selectDirectoryInteractive(startDir) {
             out.push(`    ${color}${item.name.padEnd(itemWidth)}${C.reset}`);
           }
         });
+
+        // Vertically fill down to footer so navigator frames the entire window
+        for (let i = visibleItems.length; i < maxVisible; i++) {
+          out.push('');
+        }
 
         out.push(`${C.darkDivider}${thinBar}${C.reset}`);
         const navHelp = `${C.voltBold}[↑/↓]${C.reset} ${C.white}Navigate${C.reset}   ${C.voltBold}[Enter]${C.reset} ${C.white}Open Folder${C.reset}    ${C.voltBold}[Space]${C.reset} ${C.white}Select This Folder${C.reset}`;
@@ -742,7 +717,7 @@ function renderDashboard() {
 
   const cols = getCols();
   const rows = getRows();
-  const barWidth = Math.max(76, cols - 2);
+  const barWidth = Math.max(78, cols - 2);
   const thickBar = '━'.repeat(barWidth);
   const thinBar = '─'.repeat(barWidth);
 
@@ -752,7 +727,12 @@ function renderDashboard() {
   renderAsciiHeaderToOut(out, `${C.voltBold}● STATUS: ONLINE${C.reset}`, cols);
 
   // 2. Complete Live Screen Details
-  out.push(`  ${C.bgVolt} PROJECT ${C.reset}   ${C.whiteBold}${activeProjectDir || '(None selected)'}${C.reset}`);
+  const maxPathLen = Math.max(30, barWidth - 16);
+  const displayProject = (activeProjectDir && activeProjectDir.length > maxPathLen)
+    ? '...' + activeProjectDir.slice(-(maxPathLen - 3))
+    : (activeProjectDir || '(None selected)');
+
+  out.push(`  ${C.bgVolt} PROJECT ${C.reset}   ${C.whiteBold}${displayProject}${C.reset}`);
   out.push(`  ${C.bgVolt} JAILED ${C.reset}    ${C.voltBold}STRICTLY ENFORCED${C.reset} ${C.slate}(Zero access outside folder)${C.reset}`);
   
   if (mcpTunnelUrl) {
@@ -775,18 +755,55 @@ function renderDashboard() {
 
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
+  // 4. Middle Dynamic Section: Live logs or Quick-Connect guide filling the screen
+  // Reserved for bottom: 2 lines (thickBar + compatibility footer)
+  const targetTotal = rows - 1;
+  const availableLines = Math.max(0, targetTotal - out.length - 2);
+
   if (showLiveLogs) {
     out.push(`  ${C.voltBold}LIVE HARNESS TRAFFIC & ACTIVITY LOGS:${C.reset}`);
-    const maxLogs = Math.max(3, rows - out.length - 4);
-    const logsToShow = recentLogs.slice(-maxLogs);
+    const logSlots = Math.max(1, availableLines - 1);
+    const logsToShow = recentLogs.slice(-logSlots);
     if (logsToShow.length === 0) {
       out.push(`  ${C.slate}(Waiting for AI requests from Gemini, Claude, or ChatGPT...)${C.reset}`);
+      for (let i = 1; i < logSlots; i++) out.push('');
     } else {
       logsToShow.forEach(log => out.push(`  ${log}`));
+      for (let i = logsToShow.length; i < logSlots; i++) out.push('');
     }
-    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
   } else {
-    out.push(`  ${C.slate}Supported:${C.reset} ${C.white}Google Gemini${C.reset} ${C.darkDivider}•${C.reset} ${C.white}Claude Web / Desktop${C.reset} ${C.darkDivider}•${C.reset} ${C.white}ChatGPT Custom Tools${C.reset}`);
+    // Universal LLM support statement filling vertical space down to pinned footer
+    if (availableLines >= 4) {
+      out.push(`  ${C.voltBold}UNIVERSAL AI MCP HARNESS:${C.reset}`);
+      if (barWidth >= 95) {
+        out.push(`  ${C.steel}●${C.reset} ${C.whiteBold}Built for every chat-based LLM that provides custom MCP connectors.${C.reset}`);
+        out.push(`  ${C.steel}●${C.reset} ${C.slate}Copy your MCP URL above ([C]) and paste it into your AI model's custom MCP tools.${C.reset}`);
+      } else {
+        out.push(`  ${C.steel}●${C.reset} ${C.whiteBold}Built for every chat LLM with custom MCP support.${C.reset}`);
+        out.push(`  ${C.steel}●${C.reset} ${C.slate}Copy MCP URL ([C]) and connect in your model's tools.${C.reset}`);
+      }
+      
+      const padCount = availableLines - 3;
+      for (let i = 0; i < padCount; i++) {
+        out.push('');
+      }
+    } else {
+      for (let i = 0; i < availableLines; i++) {
+        out.push('');
+      }
+    }
+  }
+
+  // 5. Pinned Bottom Frame
+  out.push(`${C.voltBold}${thickBar}${C.reset}`);
+
+  // 6. Pinned Compatibility Line (strictly bounded to barWidth)
+  if (barWidth >= 126) {
+    out.push(`  ${C.voltBold}COMPATIBILITY:${C.reset} ${C.whiteBold}Supports every chat-based LLM that provides custom MCP connectors${C.reset} ${C.slate}(Gemini, Claude, ChatGPT, DeepSeek, etc.)${C.reset}`);
+  } else if (barWidth >= 96) {
+    out.push(`  ${C.voltBold}COMPATIBILITY:${C.reset} ${C.whiteBold}Every chat-based LLM with custom MCP${C.reset} ${C.slate}• Gemini • Claude • ChatGPT • DeepSeek${C.reset}`);
+  } else {
+    out.push(`  ${C.voltBold}COMPATIBILITY:${C.reset} ${C.whiteBold}Supports every chat-based LLM with custom MCP${C.reset}`);
   }
 
   const clamped = out.slice(0, rows - 1);
@@ -867,6 +884,13 @@ async function startBridge() {
 
   // Step 7: Smooth Load of Live Dashboard
   renderDashboard();
+
+  // Dynamic window resize listener for main dashboard
+  process.stdout.on('resize', () => {
+    if (!isNavigatingFolders && !isEstablishingTunnel) {
+      renderDashboard();
+    }
+  });
 
   // Step 8: Dashboard Keypress Listener
   process.stdin.on('keypress', async (str, key) => {
