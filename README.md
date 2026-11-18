@@ -13,6 +13,10 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 <p align="center">
+  <b>English</b> | <a href="./README_zh.md">简体中文</a>
+</p>
+
+<p align="center">
   Securely connect your local codebases and development environments to Claude Web, ChatGPT, Gemini, and DeepSeek in seconds via the Model Context Protocol (MCP).
 </p>
 
