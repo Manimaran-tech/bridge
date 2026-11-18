@@ -22,6 +22,8 @@
     "mcp",
     "model-context-protocol",
     "ai",
+    "cloudflare",
+    "cloudflare-tunnel",
     "gemini",
     "claude",
     "chatgpt",
