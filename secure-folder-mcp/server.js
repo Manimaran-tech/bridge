@@ -179,14 +179,14 @@ function openWindowsFolderPicker() {
 }
 
 // ==========================================
-// 3. Complete DeepSeek Harness Tool Definitions
+// 3. Complete Bridge Tool Definitions
 // ==========================================
 
 const tools = [
   // --- 1. Subprocess Execution (dsh-tool-bash, dsh-tool-pwsh) ---
   {
     name: 'bash',
-    description: 'DeepSeek Harness Bash: Runs a command in Bash/Shell inside the project directory.',
+    description: 'Bridge Bash: Runs a command in Bash/Shell inside the project directory.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -204,7 +204,7 @@ const tools = [
   },
   {
     name: 'pwsh',
-    description: 'DeepSeek Harness PowerShell: Runs a PowerShell command inside the project directory.',
+    description: 'Bridge PowerShell: Runs a PowerShell command inside the project directory.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -222,7 +222,7 @@ const tools = [
   },
   {
     name: 'execute_command',
-    description: 'DeepSeek Harness Shell: Executes a terminal command (pytest, npm test, python script.py, etc.) strictly inside the project root directory. Captures exit code, stdout, and stderr for testing and verification.',
+    description: 'Bridge Shell: Executes a terminal command (pytest, npm test, python script.py, etc.) strictly inside the project root directory. Captures exit code, stdout, and stderr for testing and verification.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -243,7 +243,7 @@ const tools = [
   // --- 2. Background Jobs (dsh-tool-jobs, dsh-jobs-local) ---
   {
     name: 'jobs',
-    description: 'DeepSeek Harness Background Jobs: Manage long-running background tasks (start, status, logs, stop, list).',
+    description: 'Bridge Background Jobs: Manage long-running background tasks (start, status, logs, stop, list).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -266,7 +266,7 @@ const tools = [
   },
   {
     name: 'manage_background_job',
-    description: 'DeepSeek Background Job Runner: Starts long-running processes (e.g., "npm run dev", local servers, file watchers), checks their logs, or stops them.',
+    description: 'Bridge Background Job Runner: Starts long-running processes (e.g., "npm run dev", local servers, file watchers), checks their logs, or stops them.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -314,7 +314,7 @@ const tools = [
   // --- 4. Workspace Dependencies (dsh-tool-workspace-dependencies) ---
   {
     name: 'inspect_dependencies',
-    description: 'DeepSeek Dependency Analyzer: Inspects project manifests (package.json, requirements.txt, pyproject.toml, Cargo.toml, go.mod, pom.xml) to identify the project tech stack, frameworks, and installed libraries.',
+    description: 'Bridge Dependency Analyzer: Inspects project manifests (package.json, requirements.txt, pyproject.toml, Cargo.toml, go.mod, pom.xml) to identify the project tech stack, frameworks, and installed libraries.',
     inputSchema: {
       type: 'object',
       properties: {}
@@ -324,7 +324,7 @@ const tools = [
   // --- 5. Atomic Edit & Revert (dsh-atomic-write, dsh-tool-str-replace-editor) ---
   {
     name: 'edit',
-    description: 'DeepSeek Harness Edit: Atomically updates a specific code snippet inside an existing file.',
+    description: 'Bridge Edit: Atomically updates a specific code snippet inside an existing file.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -350,7 +350,7 @@ const tools = [
   },
   {
     name: 'read',
-    description: 'DeepSeek Harness Read: Reads a UTF-8 text file and returns line-numbered content.',
+    description: 'Bridge Read: Reads a UTF-8 text file and returns line-numbered content.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -372,7 +372,7 @@ const tools = [
   },
   {
     name: 'write',
-    description: 'DeepSeek Harness Write: Creates or overwrites a file inside the project directory.',
+    description: 'Bridge Write: Creates or overwrites a file inside the project directory.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -390,7 +390,7 @@ const tools = [
   },
   {
     name: 'str_replace_editor',
-    description: 'DeepSeek Harness Standalone Editor: View, create, replace string, or insert lines into files.',
+    description: 'Bridge Standalone Editor: View, create, replace string, or insert lines into files.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -430,7 +430,7 @@ const tools = [
   },
   {
     name: 'edit_file',
-    description: 'DeepSeek Surgical Editor: Atomically replaces a specific text snippet inside an existing file. Automatically creates an undo snapshot before modifying.',
+    description: 'Bridge Surgical Editor: Atomically replaces a specific text snippet inside an existing file. Automatically creates an undo snapshot before modifying.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -452,7 +452,7 @@ const tools = [
   },
   {
     name: 'revert_file',
-    description: 'DeepSeek Atomic Undo: Reverts a file to its previous state prior to the last edit or write operation.',
+    description: 'Bridge Atomic Undo: Reverts a file to its previous state prior to the last edit or write operation.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -468,7 +468,7 @@ const tools = [
   // --- 6. Web Documentation Fetcher (dsh-tool-web) ---
   {
     name: 'fetch_web_documentation',
-    description: 'DeepSeek Web Fetcher: Retrieves external documentation or library API references from an HTTPS URL.',
+    description: 'Bridge Web Fetcher: Retrieves external documentation or library API references from an HTTPS URL.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -484,7 +484,7 @@ const tools = [
   // --- 7. Plan & Goal Mode (dsh-plan-mode, dsh-tool-goal, dsh-tool-todo) ---
   {
     name: 'plan_mode',
-    description: 'DeepSeek Harness Plan Mode: Collaborative milestone planning and checklist tracking (get, set, complete_step).',
+    description: 'Bridge Plan Mode: Collaborative milestone planning and checklist tracking (get, set, complete_step).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -508,7 +508,7 @@ const tools = [
   },
   {
     name: 'manage_plan',
-    description: 'DeepSeek Plan Mode: Creates or updates a living checklist of milestones and goals for the current task.',
+    description: 'Bridge Plan Mode: Creates or updates a living checklist of milestones and goals for the current task.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -652,27 +652,27 @@ const tools = [
 
 const prompts = [
   {
-    name: 'deepseek_harness_instructions',
-    description: 'Complete DeepSeek Harness autonomous software engineering instructions.',
+    name: 'bridge_instructions',
+    description: 'Bridge autonomous software engineering instructions.',
     arguments: []
   }
 ];
 
 function getHarnessInstructions() {
-  return `You are operating as an autonomous software engineering agent running inside the complete DeepSeek Harness (dsh) environment.
+  return `You are operating as an autonomous software engineering agent running inside the Bridge local coding harness environment.
 
 ACTIVE WORKSPACE:
 Directory: "${rootDir}"
 
 FULL CAPABILITY SUITE:
-- Subprocess Execution (execute_command): Run linters, unit tests (pytest, npm test), and build tools.
-- Background Services (manage_background_job): Run local servers in background and inspect logs.
+- Subprocess Execution (execute_command, pwsh, bash): Run linters, unit tests (pytest, npm test), and build tools.
+- Background Services (manage_background_job, jobs): Run local servers in background and inspect logs.
 - Dependency Analyzer (inspect_dependencies): Check package.json / requirements.txt to know the tech stack.
 - Git Tracking (git_status, git_diff): Inspect and verify all changes.
 - Atomic Undo (revert_file): Roll back changes if an edit introduced a bug.
 - Web Docs (fetch_web_documentation): Query external API docs when needed.
-- Plan Checklist (manage_plan): Track multi-step tasks.
-- Surgical Editor (edit_file, read_file): Fast, token-efficient code manipulation.
+- Plan Checklist (manage_plan, plan_mode): Track multi-step tasks.
+- Surgical Editor (edit_file, read_file, str_replace_editor): Fast, token-efficient code manipulation.
 
 RULES:
 1. Always run tests using execute_command to verify changes.
@@ -698,7 +698,7 @@ async function handleToolCall(name, args) {
 
       for (const pattern of BLOCKED_COMMANDS) {
         if (pattern.test(cmd)) {
-          throw new Error(`Security Violation: Command "${cmd}" is blocked by DeepSeek safety policies.`);
+          throw new Error(`Security Violation: Command "${cmd}" is blocked by Bridge safety policies.`);
         }
       }
 
@@ -717,7 +717,7 @@ async function handleToolCall(name, args) {
           if (stderr && stderr.trim()) output += `STDERR:\n${stderr.trim()}\n`;
           if (!output) output = '(Command exited with no output)';
 
-          resolve(`[DeepSeek Harness Execution]\nCommand: ${cmd}\nExit Code: ${exitCode}\nDirectory: ${rootDir}\n\n${output.trim()}`);
+          resolve(`[Bridge Execution]\nCommand: ${cmd}\nExit Code: ${exitCode}\nDirectory: ${rootDir}\n\n${output.trim()}`);
         });
       });
     }
@@ -977,7 +977,7 @@ async function handleToolCall(name, args) {
       }
 
       try {
-        const response = await fetch(targetUrl, { headers: { 'User-Agent': 'DeepSeek-Harness-Agent/1.0' } });
+        const response = await fetch(targetUrl, { headers: { 'User-Agent': 'Bridge-MCP-Agent/1.0' } });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const text = await response.text();
         const clean = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -1030,7 +1030,7 @@ async function handleToolCall(name, args) {
       currentPlan = [];
       fileBackups.clear();
       logInfo(`Switched project to: ${rootDir}`);
-      return `✓ Project folder successfully set to: "${rootDir}".\nDeepSeek Harness now strictly sandboxed to this folder.`;
+      return `✓ Project folder successfully set to: "${rootDir}".\nBridge now strictly sandboxed to this folder.`;
     }
 
     case 'get_current_project': {
@@ -1050,7 +1050,7 @@ async function handleToolCall(name, args) {
 
       return JSON.stringify({
         active_project_path: rootDir,
-        harness: 'DeepSeek Harness (dsh)',
+        harness: 'Bridge',
         modules: [
           'dsh-tool-bash (execute_command)',
           'dsh-tool-jobs (manage_background_job)',
@@ -1231,8 +1231,8 @@ async function processJsonRpcMessage(msg) {
           prompts: { listChanged: true }
         },
         serverInfo: {
-          name: 'deepseek-harness-mcp',
-          version: '3.5.0'
+          name: 'Bridge',
+          version: '1.0.9'
         }
       }
     };
@@ -1283,7 +1283,7 @@ async function processJsonRpcMessage(msg) {
       jsonrpc: '2.0',
       id,
       result: {
-        description: 'DeepSeek Harness Instructions',
+        description: 'Bridge Instructions',
         messages: [{ role: 'user', content: { type: 'text', text: getHarnessInstructions() } }]
       }
     };
@@ -1301,7 +1301,7 @@ async function processJsonRpcMessage(msg) {
 // ==========================================
 
 function startHttpServer(port) {
-  logInfo(`Starting Complete DeepSeek-Harness MCP Server on port ${port}...`);
+  logInfo(`Starting Bridge MCP Server on port ${port}...`);
   logInfo(`Current Sandboxed Folder: ${rootDir}`);
 
   const server = http.createServer(async (req, res) => {
@@ -1321,7 +1321,7 @@ function startHttpServer(port) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'online',
-        service: 'DeepSeek Harness Complete MCP Suite',
+        service: 'Bridge Universal MCP Suite',
         protocolVersion: '2024-11-05',
         activeProject: rootDir,
         toolsCount: tools.length,
@@ -1335,15 +1335,15 @@ function startHttpServer(port) {
       res.end(JSON.stringify({
         openapi: '3.1.0',
         info: {
-          title: 'DeepSeek Harness MCP API',
+          title: 'Bridge MCP API',
           description: 'Full software engineering harness: execution, background jobs, git, dependency analysis, atomic undo, and filesystem.',
-          version: '3.5.0'
+          version: '1.0.9'
         },
         servers: [{ url: `https://${req.headers.host}` }],
         paths: {
           '/call': {
             post: {
-              summary: 'Execute a DeepSeek Harness tool',
+              summary: 'Execute a Bridge tool',
               operationId: 'executeTool',
               requestBody: {
                 required: true,
@@ -1470,7 +1470,7 @@ function startHttpServer(port) {
   });
 
   server.listen(port, () => {
-    logInfo(`Complete DeepSeek Harness listening on port ${port}`);
+    logInfo(`Bridge MCP listening on port ${port}`);
   });
 }
 
@@ -1479,7 +1479,7 @@ function startHttpServer(port) {
 // ==========================================
 
 function startStdioServer() {
-  logInfo(`Starting Stdio DeepSeek-Harness Server...`);
+  logInfo(`Starting Stdio Bridge Server...`);
   logInfo(`Current Sandboxed Folder: ${rootDir}`);
 
   const rl = readline.createInterface({

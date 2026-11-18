@@ -86,7 +86,7 @@ async function runTests() {
       capabilities: {},
       clientInfo: { name: 'test-client', version: '1.0.0' }
     });
-    console.assert(initRes.result.serverInfo.name === 'secure-folder-fs', 'Server name match');
+    console.assert(initRes.result.serverInfo.name === 'Bridge', 'Server name match');
     console.log('   ✓ Initialize succeeded:', initRes.result.serverInfo);
 
     // 2. Notification initialized

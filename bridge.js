@@ -254,7 +254,7 @@ function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   if (badgeText) {
-    const rightInfo = `${C.steel}v1.0.8 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
+    const rightInfo = `${C.steel}v1.0.9 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
     const leftText = `  ${badgeText}`;
     const spaceCount = Math.max(2, barWidth - stripAnsi(leftText).length - stripAnsi(rightInfo).length);
     out.push(leftText + ' '.repeat(spaceCount) + rightInfo);
@@ -315,7 +315,7 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
     // Full-width top frame
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
     const topHeader = `  ${C.voltBold}BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS${C.reset}`;
-    const topVersion = `${C.steel}v1.0.8  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
+    const topVersion = `${C.steel}v1.0.9  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
     const topSpaces = Math.max(2, barWidth - stripAnsi(topHeader).length - stripAnsi(topVersion).length);
     out.push(topHeader + ' '.repeat(topSpaces) + topVersion);
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
@@ -415,7 +415,7 @@ async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500,
 
   const spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const stages = [
-    'Mounting DeepSeek Harness & Local Project Sandbox...',
+    'Mounting Bridge & Local Project Sandbox...',
     'Connecting to Cloudflare Global Anycast Edge...',
     'Allocating Public HTTPS Quantum Tunnel for MCP...',
     'Finalizing Secure WebSocket & SSE Streaming...'
