@@ -154,7 +154,7 @@ const bar = THIN_BAR;
 const thickBar = THICK_BAR;
 
 const isLaunchFromBat = process.argv.includes('--launch');
-const rawCliArgs = process.argv.slice(2).filter(a => a !== '--launch');
+const rawCliArgs = process.argv.slice(2).filter(a => !a.startsWith('--'));
 let activeProjectDir = rawCliArgs[0] ? path.resolve(rawCliArgs[0]) : null;
 let mcpTunnelUrl = '';
 let serverProcess = null;
@@ -273,7 +273,7 @@ function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   if (badgeText) {
-    const rightInfo = `${C.steel}v1.0.5 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
+    const rightInfo = `${C.steel}v1.0.6 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
     const leftText = `  ${badgeText}`;
     const spaceCount = Math.max(2, cols - stripAnsi(leftText).length - stripAnsi(rightInfo).length - 2);
     out.push(leftText + ' '.repeat(spaceCount) + rightInfo);
@@ -333,7 +333,7 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
     // Full-width top frame
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
     const topHeader = `  ${C.voltBold}BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS${C.reset}`;
-    const topVersion = `${C.steel}v1.0.5  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
+    const topVersion = `${C.steel}v1.0.6  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
     const topSpaces = Math.max(2, cols - stripAnsi(topHeader).length - stripAnsi(topVersion).length);
     out.push(topHeader + ' '.repeat(topSpaces) + topVersion);
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
@@ -787,8 +787,9 @@ async function startBridge() {
     process.stdin.setRawMode(true);
   }
 
-  // Step 1: Initial Centered Bridge Crossing Animation (when launching via .bat)
-  if (isLaunchFromBat) {
+  // Step 1: Initial Centered Bridge Crossing Animation (Enabled by default on CLI and bat launch!)
+  const skipAnimation = process.argv.includes('--no-animation') || process.argv.includes('--fast');
+  if (!skipAnimation) {
     await playInitialLoadingAnimation(1800);
   }
 
