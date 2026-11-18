@@ -1232,7 +1232,7 @@ async function processJsonRpcMessage(msg) {
         },
         serverInfo: {
           name: 'Bridge',
-          version: '1.0.9'
+          version: '1.0.10'
         }
       }
     };
@@ -1317,7 +1317,32 @@ function startHttpServer(port) {
 
     const url = new URL(req.url, `http://${req.headers.host}`);
 
-    if (req.method === 'GET' && (url.pathname === '/mcp' || url.pathname === '/')) {
+    if (req.method === 'GET' && (url.pathname === '/mcp' || url.pathname === '/' || url.pathname === '/sse')) {
+      // Support standard MCP Server-Sent Events (SSE) streaming transport
+      if (req.headers.accept && req.headers.accept.includes('text/event-stream')) {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*'
+        });
+        const endpointUri = url.pathname === '/sse' ? '/mcp' : url.pathname;
+        res.write(`event: endpoint\ndata: ${endpointUri}\n\n`);
+
+        const keepAlive = setInterval(() => {
+          try {
+            res.write(': ping\n\n');
+          } catch (e) {
+            clearInterval(keepAlive);
+          }
+        }, 15000);
+
+        req.on('close', () => {
+          clearInterval(keepAlive);
+        });
+        return;
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'online',
@@ -1337,7 +1362,7 @@ function startHttpServer(port) {
         info: {
           title: 'Bridge MCP API',
           description: 'Full software engineering harness: execution, background jobs, git, dependency analysis, atomic undo, and filesystem.',
-          version: '1.0.9'
+          version: '1.0.10'
         },
         servers: [{ url: `https://${req.headers.host}` }],
         paths: {

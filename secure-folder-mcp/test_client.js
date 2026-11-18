@@ -87,6 +87,7 @@ async function runTests() {
       clientInfo: { name: 'test-client', version: '1.0.0' }
     });
     console.assert(initRes.result.serverInfo.name === 'Bridge', 'Server name match');
+    console.assert(initRes.result.serverInfo.version === '1.0.10', 'Server version match');
     console.log('   ✓ Initialize succeeded:', initRes.result.serverInfo);
 
     // 2. Notification initialized
