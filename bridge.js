@@ -61,6 +61,160 @@ const C = {
 const scriptDir = __dirname;
 const serverScript = path.join(scriptDir, 'secure-folder-mcp', 'server.js');
 
+// Bridge-specific configuration. This intentionally lives under ~/.bridge and
+// never reads or writes cloudflared's own ~/.cloudflared files.
+const bridgeHomeDir = path.join(os.homedir(), '.bridge');
+const bridgeConfigPath = path.join(bridgeHomeDir, 'config.json');
+
+function normalizePublicUrl(value) {
+  let url = String(value || '').trim().replace(/\/+$/, '');
+  if (!url) return '';
+  url = url.replace(/\/mcp$/i, '');
+  return url;
+}
+
+function isValidPublicUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && Boolean(parsed.hostname);
+  } catch (e) {
+    return false;
+  }
+}
+
+function readBridgeConfig() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(bridgeConfigPath, 'utf8'));
+    return {
+      tunnelToken: typeof parsed.tunnelToken === 'string' ? parsed.tunnelToken.trim() : '',
+      publicUrl: normalizePublicUrl(parsed.publicUrl)
+    };
+  } catch (e) {
+    return { tunnelToken: '', publicUrl: '' };
+  }
+}
+
+function writeBridgeConfig(config) {
+  fs.mkdirSync(bridgeHomeDir, { recursive: true, mode: 0o700 });
+  const payload = JSON.stringify({
+    tunnelToken: String(config.tunnelToken || '').trim(),
+    publicUrl: normalizePublicUrl(config.publicUrl)
+  }, null, 2) + '\n';
+  fs.writeFileSync(bridgeConfigPath, payload, { mode: 0o600 });
+  try { fs.chmodSync(bridgeConfigPath, 0o600); } catch (e) {}
+}
+
+function promptLine(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+function promptHidden(question) {
+  return new Promise((resolve, reject) => {
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+
+    if (!stdin.isTTY) {
+      const rl = readline.createInterface({ input: stdin, output: stdout });
+      rl.question(question, (answer) => {
+        rl.close();
+        resolve(answer.trim());
+      });
+      return;
+    }
+
+    stdout.write(question);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    stdin.setRawMode(true);
+
+    let value = '';
+    let settled = false;
+
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      stdin.removeListener('data', onData);
+      try { stdin.setRawMode(false); } catch (e) {}
+      stdout.write('\n');
+      if (err) reject(err);
+      else resolve(value.trim());
+    };
+
+    const onData = (chunk) => {
+      // Strip bracketed-paste markers and any other terminal escape sequences.
+      const text = String(chunk).replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
+      for (const ch of text) {
+        const code = ch.charCodeAt(0);
+        if (ch === '\u0003') {
+          finish(new Error('Setup cancelled.'));
+          return;
+        }
+        if (ch === '\r' || ch === '\n') {
+          finish();
+          return;
+        }
+        if (code === 127 || ch === '\b') {
+          if (value.length) value = value.slice(0, -1);
+          continue;
+        }
+        if (code < 32) continue;
+        value += ch;
+      }
+    };
+
+    stdin.on('data', onData);
+  });
+}
+
+async function runSetup() {
+  if (!process.stdin.isTTY) {
+    console.error('\n  ' + C.redBold + '● [ERROR]' + C.reset + ' `bridge setup` needs an interactive terminal.\n');
+    process.exit(1);
+  }
+
+  const existing = readBridgeConfig();
+
+  process.stdout.write(`\n  ${C.voltBold}● BRIDGE SETUP${C.reset}\n`);
+  process.stdout.write(`  ${C.slate}Creates a fixed MCP URL using a named Cloudflare tunnel.${C.reset}\n`);
+  process.stdout.write(`  ${C.slate}In Cloudflare Zero Trust, add a Public Hostname pointing to ${C.cyanBold}http://localhost:3000${C.reset}${C.slate}.${C.reset}\n`);
+  process.stdout.write(`  ${C.slate}Bridge stores this token only in ${bridgeConfigPath}${C.reset}\n\n`);
+
+  const tokenInput = await promptHidden(
+    existing.tunnelToken
+      ? '  Tunnel token (press Enter to keep the saved token): '
+      : '  Tunnel token: '
+  );
+  const tunnelToken = tokenInput || existing.tunnelToken;
+
+  if (!tunnelToken) {
+    process.stdout.write(`\n  ${C.redBold}● [CANCELLED]${C.reset} ${C.white}No token was saved.${C.reset}\n\n`);
+    return;
+  }
+
+  const urlInput = await promptLine(
+    existing.publicUrl
+      ? `  Public URL (press Enter to keep ${existing.publicUrl}): `
+      : '  Public URL (e.g. https://mcp.example.com): '
+  );
+  const publicUrl = normalizePublicUrl(urlInput || existing.publicUrl);
+
+  if (!isValidPublicUrl(publicUrl)) {
+    process.stdout.write(`\n  ${C.redBold}● [ERROR]${C.reset} ${C.white}Public URL must be a valid https:// URL.${C.reset}\n\n`);
+    return;
+  }
+
+  writeBridgeConfig({ tunnelToken, publicUrl });
+
+  process.stdout.write(`\n  ${C.voltBold}✓ [SAVED]${C.reset} ${C.white}Bridge will use ${C.cyanBold}${publicUrl}/mcp${C.reset}${C.white}.${C.reset}\n`);
+  process.stdout.write(`  ${C.slate}Start it with: ${C.white}bridge .${C.reset}\n\n`);
+}
+
 function getCloudflaredDownloadUrl() {
   const platform = process.platform;
   const arch = process.arch;
@@ -155,7 +309,9 @@ const thickBar = THICK_BAR;
 
 const isLaunchFromBat = process.argv.includes('--launch');
 const rawCliArgs = process.argv.slice(2).filter(a => !a.startsWith('--'));
-let activeProjectDir = rawCliArgs[0] ? path.resolve(rawCliArgs[0]) : null;
+const subcommand = rawCliArgs[0] ? rawCliArgs[0].toLowerCase() : '';
+const bridgeConfig = readBridgeConfig();
+let activeProjectDir = rawCliArgs[0] && subcommand !== 'setup' ? path.resolve(rawCliArgs[0]) : null;
 let mcpTunnelUrl = '';
 let serverProcess = null;
 let tunnelProcess = null;
@@ -191,9 +347,10 @@ function copyToClipboard(text) {
 function freePort(port) {
   try {
     if (process.platform === 'win32') {
+      // Only release Bridge's own port. Never kill unrelated cloudflared
+      // tunnels that may belong to the user's existing setup.
       const psCmd = `Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }`;
       execSync(`powershell -NoProfile -Command "${psCmd}"`, { stdio: 'ignore' });
-      execSync(`powershell -NoProfile -Command "Stop-Process -Name 'cloudflared' -Force -ErrorAction SilentlyContinue"`, { stdio: 'ignore' });
     }
   } catch (e) {}
 }
@@ -856,13 +1013,34 @@ async function startBridge() {
     if (showLiveLogs && !isNavigatingFolders && !isEstablishingTunnel) renderDashboard();
   });
 
-  // Step 5: Start Cloudflare Tunnel
+  // Step 5: Start Cloudflare Tunnel (token mode uses a fixed public URL)
   isEstablishingTunnel = true;
   const activeCloudflaredBin = await ensureCloudflaredBinary();
-  tunnelProcess = spawn(activeCloudflaredBin, ['tunnel', '--url', 'http://localhost:3000'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true
-  });
+  const useNamedTunnel = Boolean(bridgeConfig.tunnelToken);
+
+  // Do not let an unrelated TUNNEL_TOKEN from the machine leak into Bridge's
+  // tunnel. Bridge uses only the token saved by `bridge setup`.
+  const tunnelEnv = { ...process.env };
+  delete tunnelEnv.TUNNEL_TOKEN;
+  delete tunnelEnv.TUNNEL_TOKEN_FILE;
+
+  if (useNamedTunnel) {
+    tunnelEnv.TUNNEL_TOKEN = bridgeConfig.tunnelToken;
+    mcpTunnelUrl = bridgeConfig.publicUrl;
+    tunnelProcess = spawn(activeCloudflaredBin, ['tunnel', '--no-autoupdate', 'run'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: tunnelEnv
+    });
+    copyToClipboard(`${mcpTunnelUrl}/mcp`);
+    setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Fixed MCP URL loaded into your clipboard! (Ctrl + V to paste)${C.reset}`);
+  } else {
+    tunnelProcess = spawn(activeCloudflaredBin, ['tunnel', '--no-autoupdate', '--url', 'http://localhost:3000'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: tunnelEnv
+    });
+  }
 
   const extractUrl = (text) => {
     const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
@@ -875,8 +1053,30 @@ async function startBridge() {
     }
   };
 
-  tunnelProcess.stdout.on('data', chunk => extractUrl(chunk.toString()));
-  tunnelProcess.stderr.on('data', chunk => extractUrl(chunk.toString()));
+  const appendTunnelLog = (text) => {
+    text.split('\n').filter(l => l.trim()).forEach(l => {
+      recentLogs.push(`${C.slate}[${new Date().toLocaleTimeString()}] cloudflared ${l}${C.reset}`);
+      if (recentLogs.length > 50) recentLogs.shift();
+    });
+    if (showLiveLogs && !isNavigatingFolders && !isEstablishingTunnel) renderDashboard();
+  };
+
+  if (useNamedTunnel) {
+    tunnelProcess.stderr.on('data', chunk => appendTunnelLog(chunk.toString()));
+  } else {
+    tunnelProcess.stdout.on('data', chunk => extractUrl(chunk.toString()));
+    tunnelProcess.stderr.on('data', chunk => extractUrl(chunk.toString()));
+  }
+
+  tunnelProcess.on('error', (err) => {
+    setFlash(`  ${C.redBold}● [TUNNEL]${C.reset} ${C.white}Could not start cloudflared: ${err.message}${C.reset}`, 8000);
+  });
+
+  tunnelProcess.on('exit', (code, signal) => {
+    if (code !== 0 && !isNavigatingFolders) {
+      setFlash(`  ${C.redBold}● [TUNNEL]${C.reset} ${C.white}cloudflared exited (${code ?? signal}). Check the token and public hostname.${C.reset}`, 8000);
+    }
+  });
 
   // Step 6: Full Quantum Tunnel Creation Animation (directly replaces the tunnel creation wait time!)
   await playTunnelCreationAnimation(() => mcpTunnelUrl, 2500, 20000);
@@ -958,4 +1158,15 @@ process.on('unhandledRejection', (reason) => {
   console.error('\n' + C.redBold + '● [UNHANDLED REJECTION] ' + C.reset + reason);
 });
 
-startBridge();
+if (subcommand === 'setup') {
+  runSetup().catch((err) => {
+    console.error('\n' + C.redBold + '● [SETUP ERROR] ' + C.reset + err.message);
+    process.exit(1);
+  });
+} else if (bridgeConfig.tunnelToken && !isValidPublicUrl(bridgeConfig.publicUrl)) {
+  console.error('\n' + C.redBold + '● [CONFIG ERROR] ' + C.reset + 'A tunnel token is saved but the public URL is missing or invalid.');
+  console.error(C.slate + 'Run `bridge setup` to add the fixed https:// URL.' + C.reset + '\n');
+  process.exit(1);
+} else {
+  startBridge();
+}

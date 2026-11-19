@@ -74,6 +74,30 @@ Bridge 会自动建立一条 Anycast HTTPS 穿透隧道，并将实时可用端�
 https://xxxx.trycloudflare.com/mcp
 ```
 
+### 可选：固定 MCP URL
+
+默认情况下 Bridge 使用临时的 quick tunnel。如需固定 URL，可创建一个命名 Cloudflare 隧道，并将令牌交给 Bridge：
+
+1. 打开 **Cloudflare Zero Trust → Networks → Tunnels**，创建命名隧道并复制其令牌。
+2. 为该隧道添加 **Public Hostname**，指向 `http://localhost:3000`。
+3. 运行一次性配置，粘贴令牌和公网 URL：
+
+```bash
+bridge setup
+# 使用 npx 时：npx @markmayandi/bridge setup
+# Tunnel token:（隐藏输入）
+# Public URL: https://mcp.example.com
+```
+
+4. 正常启动 Bridge：
+
+```bash
+bridge .
+# 使用 npx 时：npx @markmayandi/bridge .
+```
+
+固定地址即为 `https://mcp.example.com/mcp`。令牌仅保存在 Bridge 自己的 `~/.bridge/config.json` 中（权限 `0600`），Bridge 不会读取或修改 cloudflared 的 `~/.cloudflared` 配置。未保存令牌时，Bridge 仍会使用零配置的临时隧道；如需恢复临时隧道，删除 `~/.bridge/config.json` 即可。
+
 ### 连接至各类 Web AI 客户端
 
 主流 Web 端 AI 平台（Claude Web、ChatGPT Web、Gemini 以及各类 MCP 客户端插件）均支持通过单一 `/mcp` 端点直连：
@@ -92,7 +116,7 @@ https://xxxx.trycloudflare.com/mcp
 
 * **严格目录沙箱 (Directory Jail)：** AI 的所有文件与终端操作被强制限定在指定项目目录内，严防父级目录越权穿越。
 * **原生全功能工具套件：** 内置完备的代码级工具（`read`、`write`、`edit`、`str_replace_editor`、`pwsh`、`bash`、`jobs`、`plan_mode`）。
-* **零配置 Anycast 隧道：** 底层依托 Cloudflare 提供安全稳定的公网 HTTPS 隧道，自带 SSL 证书校验与剪贴板一键同步。
+* **零配置 Anycast 隧道：** 底层依托 Cloudflare 提供安全稳定的公网 HTTPS 隧道，自带 SSL 证书校验与剪贴板一键同步。如需固定 URL，可运行一次 `bridge setup` 使用命名隧道。
 * **交互式终端仪表盘：** LN4 Volt 等宽极客控制台，支持实时流量数据流与无需重启的项目目录动态热切换。
 
 ---

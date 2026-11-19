@@ -74,6 +74,30 @@ Bridge automatically creates an Anycast HTTPS tunnel and copies the live endpoin
 https://xxxx.trycloudflare.com/mcp
 ```
 
+### Optional: Fixed MCP URL
+
+By default Bridge uses an ephemeral quick tunnel. If you want a stable URL, create a named Cloudflare tunnel and give Bridge its token:
+
+1. In **Cloudflare Zero Trust → Networks → Tunnels**, create a named tunnel and copy its token.
+2. Add a **Public Hostname** for that tunnel pointing to `http://localhost:3000`.
+3. Run the one-time setup and paste the token plus your public URL:
+
+```bash
+bridge setup
+# With npx: npx @markmayandi/bridge setup
+# Tunnel token: (hidden)
+# Public URL: https://mcp.example.com
+```
+
+4. Start Bridge normally:
+
+```bash
+bridge .
+# With npx: npx @markmayandi/bridge .
+```
+
+The fixed URL is then `https://mcp.example.com/mcp`, even though the token is stored only for Bridge, in `~/.bridge/config.json` (mode `0600`). Bridge does not read or modify cloudflared's own `~/.cloudflared` configuration. Without a saved token, Bridge keeps using the zero-setup quick tunnel. To return to quick tunnels later, delete `~/.bridge/config.json`.
+
 ### Connecting to Any AI Client
 
 Modern web AI clients (Claude Web, ChatGPT Web, Gemini, and MCP extensions) connect directly using the single `/mcp` URL. 
@@ -92,7 +116,7 @@ Cloud-based AI models cannot safely access files on your physical machine withou
 
 * **Strict Directory Jail:** AI operations are strictly restricted to the specified project folder with zero parent-directory traversal.
 * **Native Tool Suite:** Exposes native coding tools (`read`, `write`, `edit`, `str_replace_editor`, `pwsh`, `bash`, `jobs`, `plan_mode`).
-* **Zero-Setup Anycast Tunnel:** Public HTTPS tunneling powered by Cloudflare with automatic SSL and clipboard sync.
+* **Zero-Setup Anycast Tunnel:** Public HTTPS tunneling powered by Cloudflare with automatic SSL and clipboard sync. Run `bridge setup` once if you prefer a fixed named-tunnel URL.
 * **Terminal Dashboard:** Monospaced LN4 Volt interface with live traffic streaming and real-time directory switching.
 
 ---
