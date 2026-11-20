@@ -125,9 +125,11 @@ Cloud-based AI models cannot safely access files on your physical machine withou
 
 | Security Vector | Implementation |
 | :--- | :--- |
+| **Authentication & Authorization** | All HTTP and SSE endpoints enforce Bearer authentication (`Authorization: Bearer <token>` or `?token=<token>`). Unauthenticated requests are rejected with `401 Unauthorized`. |
 | **Path Traversal Protection** | Evaluates canonical `fs.realpathSync`. Access outside the targeted root jail is immediately blocked. |
 | **Symlink Boundary Checks** | Validates symlink resolution. Denies read/write operations targeting locations outside the project folder. |
 | **Local Port Isolation** | Local server binds strictly to `127.0.0.1`. Remote traffic routes through secure single-session Anycast tunnels. |
+| **Execution Policy & Disablement** | Shell tools (`pwsh`, `bash`, `execute_command`) are protected by safety policies, restricted to root directory, and can be disabled completely with `--disable-shell`. |
 | **Live Traffic Audit** | Press `[L]` at any time to stream every incoming JSON-RPC request and tool call in real time. |
 
 ---
@@ -136,7 +138,8 @@ Cloud-based AI models cannot safely access files on your physical machine withou
 
 | Key | Action |
 | :--- | :--- |
-| `[C]` | Re-copies the active MCP URL to your clipboard. |
+| `[C]` | Re-copies the authenticated MCP URL to your clipboard. |
+| `[T]` | Copies the Bearer authentication token to your clipboard. |
 | `[D]` | Opens the In-Terminal Directory Navigator to switch project folders without restarting. |
 | `[L]` | Toggles real-time streaming traffic and tool execution logs. |
 | `[Q]` | Gracefully closes the tunnel, releases ports, and exits. |

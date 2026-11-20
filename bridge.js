@@ -14,6 +14,7 @@ const http = require('http');
 const https = require('https');
 const os = require('os');
 const readline = require('readline');
+const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 
 // Lando Norris Signature LN4 Palette (#D2FF00 + Charcoal Grays)
@@ -313,7 +314,8 @@ const subcommand = rawCliArgs[0] ? rawCliArgs[0].toLowerCase() : '';
 const bridgeConfig = readBridgeConfig();
 let activeProjectDir = rawCliArgs[0] && subcommand !== 'setup' ? path.resolve(rawCliArgs[0]) : null;
 let mcpTunnelUrl = '';
-const CURRENT_VERSION = '1.0.13';
+const CURRENT_VERSION = '1.0.14';
+const bridgeAuthToken = process.env.BRIDGE_TOKEN || process.env.BRIDGE_AUTH_TOKEN || crypto.randomBytes(24).toString('hex');
 let updateAvailable = null;
 
 function checkForUpdates() {
@@ -395,7 +397,10 @@ function switchProjectDirectory(newPath) {
     port: 3000,
     path: '/api/set-directory',
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${bridgeAuthToken}`
+    }
   }, (res) => {
     let data = '';
     res.on('data', c => { data += c; });
@@ -916,9 +921,10 @@ function renderDashboard() {
 
   out.push(`  ${C.bgVolt} PROJECT ${C.reset}   ${C.whiteBold}${displayProject}${C.reset}`);
   out.push(`  ${C.bgVolt} JAILED ${C.reset}    ${C.voltBold}STRICTLY ENFORCED${C.reset} ${C.slate}(Zero access outside folder)${C.reset}`);
+  out.push(`  ${C.bgVolt} AUTH ${C.reset}      ${C.voltBold}BEARER PROTECTED${C.reset} ${C.slate}(Press [T] to copy token)${C.reset}`);
   
   if (mcpTunnelUrl) {
-    out.push(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.cyanBold}${mcpTunnelUrl}/mcp${C.reset}`);
+    out.push(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.cyanBold}${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}${C.reset}`);
   } else {
     out.push(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.slate}Establishing secure tunnel...${C.reset}`);
   }
@@ -936,8 +942,7 @@ function renderDashboard() {
 
   // Keyboard Shortcuts
   out.push(`  ${C.voltBold}KEYBOARD ACTIONS:${C.reset}`);
-  out.push(`  ${C.voltBold}[C]${C.reset} ${C.white}Copy MCP URL${C.reset}          ${C.voltBold}[D]${C.reset} ${C.white}Browse & Switch Project Folder${C.reset}`);
-  out.push(`  ${C.voltBold}[L]${C.reset} ${C.white}Live Activity Logs (${showLiveLogs ? C.voltBold + 'ON' : C.slate + 'OFF'}${C.white})${C.reset}   ${C.voltBold}[Q]${C.reset} ${C.white}Stop Server & Exit${C.reset}`);
+  out.push(`  ${C.voltBold}[C]${C.reset} ${C.white}Copy MCP URL${C.reset}    ${C.voltBold}[T]${C.reset} ${C.white}Copy Token${C.reset}    ${C.voltBold}[D]${C.reset} ${C.white}Switch Folder${C.reset}    ${C.voltBold}[L]${C.reset} ${C.white}Logs (${showLiveLogs ? C.voltBold + 'ON' : C.slate + 'OFF'}${C.white})${C.reset}    ${C.voltBold}[Q]${C.reset} ${C.white}Exit${C.reset}`);
 
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
@@ -1030,7 +1035,7 @@ async function startBridge() {
   freePort(3000);
 
   // Step 4: Start MCP Server in background
-  serverProcess = spawn('node', [serverScript, activeProjectDir, '--http', '3000'], {
+  serverProcess = spawn('node', [serverScript, activeProjectDir, '--http', '3000', '--token', bridgeAuthToken], {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   });
@@ -1064,8 +1069,8 @@ async function startBridge() {
       windowsHide: true,
       env: tunnelEnv
     });
-    copyToClipboard(`${mcpTunnelUrl}/mcp`);
-    setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Fixed MCP URL loaded into your clipboard! (Ctrl + V to paste)${C.reset}`);
+    copyToClipboard(`${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}`);
+    setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Authenticated fixed MCP URL loaded into your clipboard! (Ctrl + V to paste)${C.reset}`);
   } else {
     tunnelProcess = spawn(activeCloudflaredBin, ['tunnel', '--no-autoupdate', '--url', 'http://localhost:3000'], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1078,9 +1083,9 @@ async function startBridge() {
     const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
     if (match && !mcpTunnelUrl) {
       mcpTunnelUrl = match[0];
-      const fullUrl = `${mcpTunnelUrl}/mcp`;
+      const fullUrl = `${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}`;
       copyToClipboard(fullUrl);
-      setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}MCP URL loaded into your clipboard! (Ctrl + V to paste)${C.reset}`);
+      setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Authenticated MCP URL loaded into your clipboard! (Ctrl + V to paste)${C.reset}`);
       if (!isNavigatingFolders && !isEstablishingTunnel) renderDashboard();
     }
   };
@@ -1138,11 +1143,14 @@ async function startBridge() {
 
       if (keyName === 'c') {
         if (mcpTunnelUrl) {
-          copyToClipboard(`${mcpTunnelUrl}/mcp`);
-          setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}MCP URL copied to clipboard: ${C.cyanBold}${mcpTunnelUrl}/mcp${C.reset}`);
+          copyToClipboard(`${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}`);
+          setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Authenticated MCP URL copied to clipboard: ${C.cyanBold}${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}${C.reset}`);
         } else {
           setFlash(`  ${C.slate}● [WAIT]${C.reset} ${C.white}Tunnel is still establishing... please wait.${C.reset}`);
         }
+      } else if (keyName === 't') {
+        copyToClipboard(bridgeAuthToken);
+        setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Bearer auth token copied to clipboard! (Bearer ${bridgeAuthToken.slice(0, 8)}...)${C.reset}`);
       } else if (keyName === 'd') {
         // Launch In-CLI Directory Navigator
         const picked = await selectDirectoryInteractive(activeProjectDir);

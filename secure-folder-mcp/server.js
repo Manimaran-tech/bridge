@@ -32,6 +32,9 @@ let rootDir = null;
 let isReadOnly = false;
 let allowEnvFiles = false;
 let httpPort = null;
+let authToken = process.env.BRIDGE_TOKEN || process.env.BRIDGE_AUTH_TOKEN || null;
+let noAuth = false;
+let disableShell = false;
 let currentPlan = []; // dsh-plan-mode
 const fileBackups = new Map(); // dsh-atomic-write: path -> [previous_contents]
 const backgroundJobs = new Map(); // dsh-tool-jobs: jobId -> { proc, cmd, startTime, logs }
@@ -45,8 +48,29 @@ for (let i = 0; i < args.length; i++) {
     allowEnvFiles = true;
   } else if (arg === '--http') {
     httpPort = parseInt(args[++i], 10) || 3000;
+  } else if (arg === '--token') {
+    authToken = args[++i] || null;
+  } else if (arg === '--no-auth') {
+    noAuth = true;
+  } else if (arg === '--disable-shell') {
+    disableShell = true;
   } else if (!arg.startsWith('-') && !rootDir) {
     rootDir = arg;
+  }
+}
+
+if (httpPort) {
+  if (noAuth) {
+    authToken = null;
+    logInfo('Warning: Running HTTP server with authentication disabled (--no-auth).');
+  } else if (!authToken) {
+    authToken = crypto.randomBytes(24).toString('hex');
+    logInfo(`Security: Generated session Bearer auth token: ${authToken}`);
+  } else {
+    logInfo('Security: Bearer authentication enabled with configured token.');
+  }
+  if (disableShell) {
+    logInfo('Security: Remote shell execution disabled (--disable-shell).');
   }
 }
 
@@ -733,6 +757,7 @@ async function handleToolCall(name, args) {
     case 'bash':
     case 'execute_command': {
       if (isReadOnly) throw new Error('Server running in read-only mode.');
+      if (disableShell) throw new Error('Security Violation: Shell execution is disabled on this server.');
       const cmd = args.command;
       if (!cmd || typeof cmd !== 'string') throw new Error('Command must be a non-empty string.');
 
@@ -1334,7 +1359,7 @@ async function processJsonRpcMessage(msg) {
         },
         serverInfo: {
           name: 'Bridge',
-          version: '1.0.13'
+          version: '1.0.14'
         }
       }
     };
@@ -1418,6 +1443,47 @@ async function processJsonRpcMessage(msg) {
 // 6. HTTP Transport (Gemini, Claude, ChatGPT)
 // ==========================================
 
+function extractAuthToken(req, url) {
+  const authHeader = req.headers['authorization'];
+  if (authHeader) {
+    const parts = authHeader.split(' ');
+    if (parts.length === 2 && /^bearer$/i.test(parts[0])) {
+      return parts[1].trim();
+    }
+    return authHeader.trim();
+  }
+
+  if (req.headers['x-bridge-token']) {
+    return String(req.headers['x-bridge-token']).trim();
+  }
+  if (req.headers['x-api-key']) {
+    return String(req.headers['x-api-key']).trim();
+  }
+
+  if (url && url.searchParams) {
+    const qToken = url.searchParams.get('token') || url.searchParams.get('apiKey') || url.searchParams.get('auth');
+    if (qToken) {
+      return qToken.trim();
+    }
+  }
+
+  return null;
+}
+
+function verifyAuth(req, url) {
+  if (!authToken) return true;
+  const provided = extractAuthToken(req, url);
+  if (!provided) return false;
+  try {
+    const a = Buffer.from(provided);
+    const b = Buffer.from(authToken);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch (e) {
+    return false;
+  }
+}
+
 function startHttpServer(port) {
   logInfo(`Starting Bridge MCP Server on port ${port}...`);
   logInfo(`Current Sandboxed Folder: ${rootDir}`);
@@ -1463,6 +1529,22 @@ function startHttpServer(port) {
 
     const url = new URL(req.url, `http://${req.headers.host}`);
 
+    if (authToken && !verifyAuth(req, url)) {
+      const authErrLog = `[401-UNAUTHORIZED] ${new Date().toISOString()} ${req.method} ${url.pathname}\n`;
+      try { fs.appendFileSync(path.join(rootDir || __dirname, 'server_requests.log'), authErrLog); } catch (e) {}
+      process.stderr.write(authErrLog);
+
+      res.writeHead(401, {
+        'Content-Type': 'application/json',
+        'WWW-Authenticate': 'Bearer realm="Bridge MCP"'
+      });
+      res.end(JSON.stringify({
+        error: 'Unauthorized: Valid authentication token required. Provide via Authorization header (Bearer <token>) or ?token=<token> query parameter.',
+        status: 401
+      }));
+      return;
+    }
+
     if (req.method === 'GET' && (url.pathname === '/mcp' || url.pathname === '/' || url.pathname === '/sse')) {
       // Support standard MCP Server-Sent Events (SSE) streaming transport
       if (req.headers.accept && req.headers.accept.includes('text/event-stream')) {
@@ -1482,7 +1564,8 @@ function startHttpServer(port) {
         const proto = req.headers['x-forwarded-proto'] || (req.socket && req.socket.encrypted ? 'https' : 'http');
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         const sessionId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
-        const endpointUri = `${proto}://${host}/mcp?sessionId=${sessionId}`;
+        const tokenParam = authToken ? `&token=${encodeURIComponent(authToken)}` : '';
+        const endpointUri = `${proto}://${host}/mcp?sessionId=${sessionId}${tokenParam}`;
 
         // Send a 2KB whitespace comment to force Cloudflare proxy buffer to flush immediately!
         res.write(`: ${' '.repeat(2048)}\n\n`);
@@ -1530,7 +1613,7 @@ function startHttpServer(port) {
         info: {
           title: 'Bridge MCP API',
           description: 'Full software engineering harness: execution, background jobs, git, dependency analysis, atomic undo, and filesystem.',
-          version: '1.0.13'
+          version: '1.0.14'
         },
         servers: [{ url: `https://${req.headers.host}` }],
         paths: {
@@ -1677,8 +1760,8 @@ function startHttpServer(port) {
   server.timeout = 120000;
   server.maxHeadersCount = 2000;
 
-  server.listen(port, () => {
-    logInfo(`Bridge MCP listening on port ${port}`);
+  server.listen(port, '127.0.0.1', () => {
+    logInfo(`Bridge MCP listening on 127.0.0.1:${port}`);
   });
 }
 

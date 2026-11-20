@@ -123,8 +123,10 @@ node server.js [folder_path] [options]
 - `folder_path`: Directory to sandbox the chatbot to (defaults to current directory).
 - `--read-only`: Disables `write_file`, `edit_file`, and `delete_file` (view-only mode).
 - `--allow-env`: Permits access to `.env` files (shielded by default).
-- `--http <port>`: Runs as an HTTP/REST server on the given port (e.g., 3000).
-- `--token <secret>`: Adds Bearer authentication to the HTTP endpoints.
+- `--http <port>`: Runs as an HTTP/REST server on the given port (e.g., 3000), bound strictly to 127.0.0.1.
+- `--token <secret>`: Adds Bearer authentication to HTTP endpoints (auto-generated if omitted).
+- `--disable-shell`: Disables shell command execution tools (`bash`, `pwsh`, `execute_command`).
+- `--no-auth`: Explicitly disables authentication (for isolated local testing).
 
 ---
 
