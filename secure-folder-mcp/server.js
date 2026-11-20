@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const http = require('http');
+const crypto = require('crypto');
 const { exec, spawn, execSync } = require('child_process');
 
 // ==========================================
@@ -1221,18 +1222,21 @@ async function processJsonRpcMessage(msg) {
   const { id, method, params } = msg;
 
   if (method === 'initialize') {
+    const requestedVersion = (params && params.protocolVersion) || '2024-11-05';
     return {
       jsonrpc: '2.0',
       id,
       result: {
-        protocolVersion: '2024-11-05',
+        protocolVersion: requestedVersion,
         capabilities: {
           tools: { listChanged: true },
-          prompts: { listChanged: true }
+          prompts: { listChanged: true },
+          resources: { subscribe: false, listChanged: false },
+          logging: {}
         },
         serverInfo: {
           name: 'Bridge',
-          version: '1.0.10'
+          version: '1.0.11'
         }
       }
     };
@@ -1289,6 +1293,22 @@ async function processJsonRpcMessage(msg) {
     };
   }
 
+  if (method === 'resources/list') {
+    return { jsonrpc: '2.0', id, result: { resources: [] } };
+  }
+
+  if (method === 'resources/templates/list') {
+    return { jsonrpc: '2.0', id, result: { resourceTemplates: [] } };
+  }
+
+  if (method === 'completion/complete') {
+    return { jsonrpc: '2.0', id, result: { completion: { values: [] } } };
+  }
+
+  if (method === 'logging/setLevel') {
+    return { jsonrpc: '2.0', id, result: {} };
+  }
+
   return {
     jsonrpc: '2.0',
     id,
@@ -1304,10 +1324,32 @@ function startHttpServer(port) {
   logInfo(`Starting Bridge MCP Server on port ${port}...`);
   logInfo(`Current Sandboxed Folder: ${rootDir}`);
 
+  const sseSessions = new Map();
+
+  function sendToSse(sessionId, payload) {
+    const sseFormatted = `event: message\ndata: ${JSON.stringify(payload)}\n\n`;
+    if (sessionId && sseSessions.has(sessionId)) {
+      try {
+        sseSessions.get(sessionId).res.write(sseFormatted);
+        return;
+      } catch (e) {
+        sseSessions.delete(sessionId);
+      }
+    }
+    // Fallback: send to all active SSE connections
+    for (const [id, session] of sseSessions.entries()) {
+      try {
+        session.res.write(sseFormatted);
+      } catch (e) {
+        sseSessions.delete(id);
+      }
+    }
+  }
+
   const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, x-mcp-version, mcp-session-id');
+    res.setHeader('Access-Control-Allow-Headers', '*');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -1324,9 +1366,12 @@ function startHttpServer(port) {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache, no-transform',
           'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
           'Access-Control-Allow-Origin': '*'
         });
-        const endpointUri = url.pathname === '/sse' ? '/mcp' : url.pathname;
+
+        const sessionId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+        const endpointUri = `/mcp?sessionId=${sessionId}`;
         res.write(`event: endpoint\ndata: ${endpointUri}\n\n`);
 
         const keepAlive = setInterval(() => {
@@ -1334,11 +1379,15 @@ function startHttpServer(port) {
             res.write(': ping\n\n');
           } catch (e) {
             clearInterval(keepAlive);
+            sseSessions.delete(sessionId);
           }
         }, 15000);
 
+        sseSessions.set(sessionId, { res, keepAlive });
+
         req.on('close', () => {
           clearInterval(keepAlive);
+          sseSessions.delete(sessionId);
         });
         return;
       }
@@ -1362,7 +1411,7 @@ function startHttpServer(port) {
         info: {
           title: 'Bridge MCP API',
           description: 'Full software engineering harness: execution, background jobs, git, dependency analysis, atomic undo, and filesystem.',
-          version: '1.0.10'
+          version: '1.0.11'
         },
         servers: [{ url: `https://${req.headers.host}` }],
         paths: {
@@ -1464,14 +1513,16 @@ function startHttpServer(port) {
       return;
     }
 
-    if (req.method === 'POST' && (url.pathname === '/mcp' || url.pathname === '/')) {
+    if (req.method === 'POST' && (url.pathname === '/mcp' || url.pathname === '/' || url.pathname === '/messages' || url.pathname === '/message')) {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
         try {
           const msg = JSON.parse(body);
+          const sessionId = url.searchParams.get('sessionId') || req.headers['mcp-session-id'];
           const response = await processJsonRpcMessage(msg);
           if (response) {
+            sendToSse(sessionId, response);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(response));
           } else {

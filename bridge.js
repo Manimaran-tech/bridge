@@ -157,6 +157,31 @@ const isLaunchFromBat = process.argv.includes('--launch');
 const rawCliArgs = process.argv.slice(2).filter(a => !a.startsWith('--'));
 let activeProjectDir = rawCliArgs[0] ? path.resolve(rawCliArgs[0]) : null;
 let mcpTunnelUrl = '';
+const CURRENT_VERSION = '1.0.11';
+let updateAvailable = null;
+
+function checkForUpdates() {
+  try {
+    const req = https.get('https://registry.npmjs.org/@markmayandi/bridge/latest', { timeout: 2500 }, (res) => {
+      if (res.statusCode === 200) {
+        let raw = '';
+        res.on('data', d => raw += d);
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(raw);
+            if (data.version && data.version !== CURRENT_VERSION) {
+              updateAvailable = data.version;
+              if (!isNavigatingFolders && !isEstablishingTunnel) renderDashboard();
+            }
+          } catch (e) {}
+        });
+      }
+    });
+    req.on('error', () => {});
+    req.on('timeout', () => req.destroy());
+  } catch (e) {}
+}
+
 let serverProcess = null;
 let tunnelProcess = null;
 let showLiveLogs = false;
@@ -254,7 +279,7 @@ function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   if (badgeText) {
-    const rightInfo = `${C.steel}v1.0.10 • HIGH-SPEED AI MCP HARNESS${C.reset}`;
+    const rightInfo = `${C.steel}v${CURRENT_VERSION} • HIGH-SPEED AI MCP HARNESS${C.reset}`;
     const leftText = `  ${badgeText}`;
     const spaceCount = Math.max(2, barWidth - stripAnsi(leftText).length - stripAnsi(rightInfo).length);
     out.push(leftText + ' '.repeat(spaceCount) + rightInfo);
@@ -315,7 +340,7 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
     // Full-width top frame
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
     const topHeader = `  ${C.voltBold}BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS${C.reset}`;
-    const topVersion = `${C.steel}v1.0.10  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
+    const topVersion = `${C.steel}v${CURRENT_VERSION}  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
     const topSpaces = Math.max(2, barWidth - stripAnsi(topHeader).length - stripAnsi(topVersion).length);
     out.push(topHeader + ' '.repeat(topSpaces) + topVersion);
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
@@ -741,6 +766,10 @@ function renderDashboard() {
     out.push(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.slate}Establishing secure tunnel...${C.reset}`);
   }
 
+  if (updateAvailable) {
+    out.push(`  ${C.bgVolt} UPDATE ${C.reset}   ${C.voltBold}v${updateAvailable} available!${C.reset} ${C.white}Run: npm install -g @markmayandi/bridge@latest${C.reset}`);
+  }
+
   out.push(`${C.darkDivider}${thinBar}${C.reset}`);
 
   if (flashNotification) {
@@ -811,6 +840,9 @@ function renderDashboard() {
 }
 
 async function startBridge() {
+  // Check for updates in background (non-blocking)
+  checkForUpdates();
+
   // Enter Alternate Screen Buffer & hide cursor immediately (locks viewport, zero scrollback!)
   process.stdout.write('\x1b[?1049h\x1b[?25l');
 
