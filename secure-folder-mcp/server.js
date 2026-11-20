@@ -596,6 +596,21 @@ const tools = [
     }
   },
   {
+    name: 'read_files',
+    description: 'Reads multiple files in a single batch request. Highly efficient and eliminates tunnel bandwidth bottlenecks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of relative file paths to read.'
+        }
+      },
+      required: ['paths']
+    }
+  },
+  {
     name: 'write_file',
     description: 'Creates or completely overwrites a file inside the active project folder. Automatically saves a revert snapshot.',
     inputSchema: {
@@ -673,12 +688,13 @@ FULL CAPABILITY SUITE:
 - Atomic Undo (revert_file): Roll back changes if an edit introduced a bug.
 - Web Docs (fetch_web_documentation): Query external API docs when needed.
 - Plan Checklist (manage_plan, plan_mode): Track multi-step tasks.
-- Surgical Editor (edit_file, read_file, str_replace_editor): Fast, token-efficient code manipulation.
+- Surgical Editor (edit_file, read_file, read_files, str_replace_editor): Fast, token-efficient code manipulation.
 
 RULES:
 1. Always run tests using execute_command to verify changes.
 2. Check git_diff before declaring a task finished.
-3. You are strictly confined to "${rootDir}". All execution runs within this directory.`;
+3. You are strictly confined to "${rootDir}". All execution runs within this directory.
+4. High Efficiency: When reading multiple files, use "read_files" with an array of paths to retrieve them all in a single fast call.`;
 }
 
 // ==========================================
@@ -1133,6 +1149,36 @@ async function handleToolCall(name, args) {
       return `File: ${filePath} (Lines ${startLine}-${endLine} of ${totalLines}):\n\n${outputLines.join('\n')}`;
     }
 
+    case 'read_files':
+    case 'read_multiple_files': {
+      const filePaths = Array.isArray(args.paths) ? args.paths : (args.files || []);
+      if (!Array.isArray(filePaths) || filePaths.length === 0) {
+        throw new Error('paths parameter must be a non-empty array of file paths.');
+      }
+
+      const results = [];
+      for (const fp of filePaths) {
+        try {
+          const resolved = validateAndResolve(fp);
+          const stat = fs.statSync(resolved);
+          if (stat.isDirectory()) {
+            results.push(`=== FILE: ${fp} ===\n[Error: "${fp}" is a directory]\n=== END: ${fp} ===`);
+            continue;
+          }
+          if (isBinaryFile(resolved)) {
+            results.push(`=== FILE: ${fp} ===\n[Binary file (${stat.size} bytes) omitted]\n=== END: ${fp} ===`);
+            continue;
+          }
+          const content = fs.readFileSync(resolved, 'utf-8');
+          results.push(`=== FILE: ${fp} (${stat.size} bytes) ===\n${content}\n=== END: ${fp} ===`);
+        } catch (err) {
+          results.push(`=== FILE: ${fp} ===\n[Error: ${err.message}]\n=== END: ${fp} ===`);
+        }
+      }
+
+      return results.join('\n\n');
+    }
+
     case 'write':
     case 'write_file': {
       if (isReadOnly) throw new Error('Server running in read-only mode.');
@@ -1236,7 +1282,7 @@ async function processJsonRpcMessage(msg) {
         },
         serverInfo: {
           name: 'Bridge',
-          version: '1.0.11'
+          version: '1.0.12'
         }
       }
     };
@@ -1347,6 +1393,12 @@ function startHttpServer(port) {
   }
 
   const server = http.createServer(async (req, res) => {
+    const logLine = `[HTTP] ${new Date().toISOString()} ${req.method} ${req.url} (Accept: ${req.headers.accept || '*/*'}) host: ${req.headers.host || ''}\n`;
+    try {
+      fs.appendFileSync(path.join(rootDir || __dirname, 'server_requests.log'), logLine);
+    } catch (e) {}
+    process.stderr.write(logLine);
+
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
@@ -1372,6 +1424,9 @@ function startHttpServer(port) {
 
         const sessionId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
         const endpointUri = `/mcp?sessionId=${sessionId}`;
+
+        // Send a 2KB whitespace comment to force Cloudflare proxy buffer to flush immediately!
+        res.write(`: ${' '.repeat(2048)}\n\n`);
         res.write(`event: endpoint\ndata: ${endpointUri}\n\n`);
 
         const keepAlive = setInterval(() => {
@@ -1411,7 +1466,7 @@ function startHttpServer(port) {
         info: {
           title: 'Bridge MCP API',
           description: 'Full software engineering harness: execution, background jobs, git, dependency analysis, atomic undo, and filesystem.',
-          version: '1.0.11'
+          version: '1.0.12'
         },
         servers: [{ url: `https://${req.headers.host}` }],
         paths: {
@@ -1521,6 +1576,9 @@ function startHttpServer(port) {
           const msg = JSON.parse(body);
           const sessionId = url.searchParams.get('sessionId') || req.headers['mcp-session-id'];
           const response = await processJsonRpcMessage(msg);
+          const rpcLog = `[MCP-RPC] ${new Date().toISOString()} method: ${msg.method || 'unknown'} (id: ${msg.id}) -> response: ${response ? 'OK' : '204'}\n`;
+          try { fs.appendFileSync(path.join(rootDir || __dirname, 'server_requests.log'), rpcLog); } catch (e) {}
+          process.stderr.write(rpcLog);
           if (response) {
             sendToSse(sessionId, response);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1541,9 +1599,18 @@ function startHttpServer(port) {
       return;
     }
 
+    const notFound = `[404-NOT-FOUND] ${new Date().toISOString()} ${req.method} ${url.pathname}\n`;
+    try { fs.appendFileSync(path.join(rootDir || __dirname, 'server_requests.log'), notFound); } catch (e) {}
+    process.stderr.write(notFound);
+
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Endpoint not found. Use /mcp' }));
   });
+
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
+  server.timeout = 120000;
+  server.maxHeadersCount = 2000;
 
   server.listen(port, () => {
     logInfo(`Bridge MCP listening on port ${port}`);
