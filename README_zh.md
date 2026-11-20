@@ -68,19 +68,28 @@ node bridge.js /path/to/project
 
 ## 通用 MCP 连接
 
-Bridge 会自动建立一条 Anycast HTTPS 穿透隧道，并将实时可用端点直接复制到系统剪贴板：
+Bridge 会自动建立一条 Anycast HTTPS 穿透隧道，生成高强度安全认证令牌，并将带有认证信息的端点直接复制到系统剪贴板：
 
 ```text
-https://xxxx.trycloudflare.com/mcp
+https://xxxx.trycloudflare.com/mcp?token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-### 可选：固定 MCP URL
+### 身份验证与安全防护体系
 
-默认情况下 Bridge 使用临时的 quick tunnel。如需固定 URL，可创建一个命名 Cloudflare 隧道，并将令牌交给 Bridge：
+Bridge 具备原生的零信任安全架构：
+- **Bearer Token 身份认证**：所有 HTTP/SSE 端点（`/mcp`、`/call`、`/api/set-directory`、`/api/status`、`/openapi.json`）均必须携带认证令牌（支持 `Authorization: Bearer <token>` 请求头或 `?token=<token>` 参数），未授权请求将被拒绝并返回 `401 Unauthorized`。
+- **动态令牌自动签发**：启动时，Bridge 会自动生成一个 24 字节高熵十六进制安全令牌，并自动拼装至剪贴板链接中。
+- **自定义令牌支持**：可通过 `--token <secret>` 参数或 `BRIDGE_TOKEN` 环境变量指定自定义认证令牌。
+- **本地回环地址锁定**：本地 MCP 服务独占绑定 `127.0.0.1`，杜绝局域网旁路窃听与未授权访问。
+- **终端命令执行禁用**：可通过 `--disable-shell` 参数运行，严格禁止任何外部终端命令执行，仅保留沙箱文件操作。
+
+### 可选：固定 MCP URL (Cloudflare 命名隧道)
+
+默认情况下 Bridge 使用零配置的临时 quick tunnel。如需固定域名，可创建一个命名 Cloudflare 隧道，并将令牌交给 Bridge：
 
 1. 打开 **Cloudflare Zero Trust → Networks → Tunnels**，创建命名隧道并复制其令牌。
 2. 为该隧道添加 **Public Hostname**，指向 `http://localhost:3000`。
-3. 运行一次性配置，粘贴令牌和公网 URL：
+3. 运行一次性交互式配置：
 
 ```bash
 bridge setup
@@ -96,13 +105,13 @@ bridge .
 # 使用 npx 时：npx @markmayandi/bridge .
 ```
 
-固定地址即为 `https://mcp.example.com/mcp`。令牌仅保存在 Bridge 自己的 `~/.bridge/config.json` 中（权限 `0600`），Bridge 不会读取或修改 cloudflared 的 `~/.cloudflared` 配置。未保存令牌时，Bridge 仍会使用零配置的临时隧道；如需恢复临时隧道，删除 `~/.bridge/config.json` 即可。
+固定地址即为 `https://mcp.example.com/mcp?token=<token>`。令牌仅保存在 Bridge 专用的 `~/.bridge/config.json` 中（权限 `0600`），Bridge 不会读取或修改 cloudflared 自身的 `~/.cloudflared` 配置。未保存令牌时，Bridge 会继续使用零配置临时隧道；如需切回临时隧道，随时删除 `~/.bridge/config.json` 即可。
 
 ### 连接至各类 Web AI 客户端
 
-主流 Web 端 AI 平台（Claude Web、ChatGPT Web、Gemini 以及各类 MCP 客户端插件）均支持通过单一 `/mcp` 端点直连：
+主流 Web 端 AI 平台（Claude Web、ChatGPT Web、Gemini 以及各类 MCP 客户端插件）均支持通过已认证的 `/mcp` 端点直连：
 
-1. 从 Bridge 终端复制实时 MCP URL（程序启动后已自动同步至剪贴板）。
+1. 从 Bridge 终端复制实时 MCP URL（程序启动后已自动同步至剪贴板，包含安全 Token）。
 2. 将此 URL 粘贴至您的 AI 客户端的 MCP 工具或自定义接口设置中。
 3. 您的 AI 模型即可立即拥有针对本地项目的沙箱级读写、代码重构、目录搜索及终端测试执行能力。
 
@@ -125,9 +134,11 @@ bridge .
 
 | 防护维度 | 实现机制 |
 | :--- | :--- |
+| **身份认证与授权 (Authentication)** | 所有 HTTP 与 SSE 端点均强制启用 Bearer 令牌认证（支持 `Authorization: Bearer <token>` 与 `?token=<token>`），未授权请求直接返回 `401 Unauthorized`。 |
 | **路径穿越防御 (Path Traversal)** | 采用底层规范化路径校验 (`fs.realpathSync`)，一旦检测到任何指向根目录沙箱外部的操作，立即阻断。 |
 | **符号链接越界检查 (Symlinks)** | 深度解析符号链接目标，严禁任何指向项目文件夹外部的读写与重定向。 |
 | **本地端口严格隔离** | 本地服务仅监听回环地址 `127.0.0.1`，公网数据流仅经由经过认证的单会话 Anycast 隧道流转。 |
+| **命令执行管控与禁用** | 终端工具套件 (`pwsh`、`bash`、`execute_command`) 受严格策略保护，并可通过 `--disable-shell` 完全禁用远程命令执行。 |
 | **实时流量透明审计** | 随时按下 `[L]` 键，即可在终端实时监听所有传入的 JSON-RPC 请求细节与工具调用参数。 |
 
 ---
@@ -136,7 +147,8 @@ bridge .
 
 | 按键 | 功能说明 |
 | :--- | :--- |
-| `[C]` | 重新将当前的实时 MCP URL 复制到剪贴板。 |
+| `[C]` | 重新将带有身份认证 Token 的 MCP URL 复制到剪贴板。 |
+| `[T]` | 单独复制 Bearer 身份认证令牌 (Token) 到剪贴板。 |
 | `[D]` | 打开终端内置目录导航器，无需重启服务即可快速切换工作目录。 |
 | `[L]` | 开启 / 关闭实时数据流量与工具执行日志流。 |
 | `[Q]` | 优雅断开穿透隧道、释放占用端口并退出程序。 |

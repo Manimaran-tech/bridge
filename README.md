@@ -68,19 +68,28 @@ node bridge.js /path/to/project
 
 ## Universal MCP Connection
 
-Bridge automatically creates an Anycast HTTPS tunnel and copies the live endpoint to your clipboard:
+Bridge automatically creates an Anycast HTTPS tunnel, generates a secure session token, and copies the authenticated endpoint to your clipboard:
 
 ```text
-https://xxxx.trycloudflare.com/mcp
+https://xxxx.trycloudflare.com/mcp?token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-### Optional: Fixed MCP URL
+### Authentication & Security Model
 
-By default Bridge uses an ephemeral quick tunnel. If you want a stable URL, create a named Cloudflare tunnel and give Bridge its token:
+Bridge features built-in zero-trust security:
+- **Bearer Token Auth**: Every HTTP/SSE endpoint (`/mcp`, `/call`, `/api/set-directory`, `/api/status`, `/openapi.json`) requires a valid token via `Authorization: Bearer <token>` or `?token=<token>`. Unauthenticated requests are rejected with `401 Unauthorized`.
+- **Automatic Token Generation**: On startup, Bridge generates a 24-byte cryptographic hex token and automatically embeds it in your clipboard URL.
+- **Custom Token**: Supply your own token using the `--token <secret>` option or `BRIDGE_TOKEN` environment variable.
+- **Strict Loopback Binding**: The local MCP server listens exclusively on `127.0.0.1`, isolating it from local network eavesdropping.
+- **Shell Disablement**: Run with `--disable-shell` to restrict tool execution to sandboxed file operations only.
+
+### Optional: Fixed MCP URL (Cloudflare Named Tunnels)
+
+By default Bridge uses an ephemeral quick tunnel. If you want a stable, permanent domain, create a named Cloudflare tunnel and configure Bridge with its token:
 
 1. In **Cloudflare Zero Trust → Networks → Tunnels**, create a named tunnel and copy its token.
 2. Add a **Public Hostname** for that tunnel pointing to `http://localhost:3000`.
-3. Run the one-time setup and paste the token plus your public URL:
+3. Run the one-time interactive setup:
 
 ```bash
 bridge setup
@@ -96,11 +105,11 @@ bridge .
 # With npx: npx @markmayandi/bridge .
 ```
 
-The fixed URL is then `https://mcp.example.com/mcp`, even though the token is stored only for Bridge, in `~/.bridge/config.json` (mode `0600`). Bridge does not read or modify cloudflared's own `~/.cloudflared` configuration. Without a saved token, Bridge keeps using the zero-setup quick tunnel. To return to quick tunnels later, delete `~/.bridge/config.json`.
+The fixed endpoint will then be `https://mcp.example.com/mcp?token=<token>`, with credentials stored safely in `~/.bridge/config.json` (permissions `0600`). Bridge manages this independently without interfering with existing `~/.cloudflared` configurations. To switch back to ephemeral quick tunnels at any time, simply delete `~/.bridge/config.json`.
 
 ### Connecting to Any AI Client
 
-Modern web AI clients (Claude Web, ChatGPT Web, Gemini, and MCP extensions) connect directly using the single `/mcp` URL. 
+Modern web AI clients (Claude Web, ChatGPT Web, Gemini, and MCP extensions) connect directly using the authenticated `/mcp` URL:
 
 1. Copy your live MCP URL from Bridge (automatically placed in your clipboard on startup).
 2. Paste the URL directly into your AI client's MCP or custom tool integration.
