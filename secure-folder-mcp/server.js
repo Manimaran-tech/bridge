@@ -611,6 +611,28 @@ const tools = [
     }
   },
   {
+    name: 'write_files',
+    description: 'Creates or updates multiple files in a single batch request. Highly efficient and prevents permission/network stalls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Relative file path.' },
+              content: { type: 'string', description: 'Full text content.' }
+            },
+            required: ['path', 'content']
+          },
+          description: 'Array of { path, content } objects to write.'
+        }
+      },
+      required: ['files']
+    }
+  },
+  {
     name: 'write_file',
     description: 'Creates or completely overwrites a file inside the active project folder. Automatically saves a revert snapshot.',
     inputSchema: {
@@ -688,13 +710,14 @@ FULL CAPABILITY SUITE:
 - Atomic Undo (revert_file): Roll back changes if an edit introduced a bug.
 - Web Docs (fetch_web_documentation): Query external API docs when needed.
 - Plan Checklist (manage_plan, plan_mode): Track multi-step tasks.
-- Surgical Editor (edit_file, read_file, read_files, str_replace_editor): Fast, token-efficient code manipulation.
+- Surgical Editor (edit_file, read_file, read_files, write_file, write_files, str_replace_editor): Fast, token-efficient code manipulation.
 
 RULES:
 1. Always run tests using execute_command to verify changes.
 2. Check git_diff before declaring a task finished.
 3. You are strictly confined to "${rootDir}". All execution runs within this directory.
-4. High Efficiency: When reading multiple files, use "read_files" with an array of paths to retrieve them all in a single fast call.`;
+4. High Efficiency: When reading multiple files, use "read_files" with an array of paths to retrieve them all in a single fast call.
+5. Batch Operations: When creating or modifying multiple files, use "write_files" with an array of { path, content } objects to execute them atomically in one call.`;
 }
 
 // ==========================================
@@ -719,13 +742,13 @@ async function handleToolCall(name, args) {
         }
       }
 
-      const timeoutMs = Math.min(Math.max(5, (args.timeout_seconds || 30)) * 1000, 60000);
+      const timeoutMs = Math.min(Math.max(5, (args.timeout_seconds || 60)) * 1000, 180000);
 
       return new Promise((resolve) => {
         exec(cmd, {
           cwd: rootDir,
           timeout: timeoutMs,
-          maxBuffer: 1024 * 512,
+          maxBuffer: 1024 * 1024 * 4,
           windowsHide: true
         }, (error, stdout, stderr) => {
           const exitCode = error ? (error.code !== undefined ? error.code : 1) : 0;
@@ -1199,6 +1222,35 @@ async function handleToolCall(name, args) {
       return `<path>${filePath}</path>\n<type>file</type>\n<content>\n${fs.existsSync(resolved) ? 'Updated' : 'Created'} file (${stat.size} bytes)\n</content>`;
     }
 
+    case 'write_files':
+    case 'write_multiple_files': {
+      if (isReadOnly) throw new Error('Server running in read-only mode.');
+      const files = Array.isArray(args.files) ? args.files : [];
+      if (!Array.isArray(files) || files.length === 0) {
+        throw new Error('files parameter must be a non-empty array of objects with { path, content }.');
+      }
+
+      const results = [];
+      for (const item of files) {
+        const filePath = item.path || item.file_path;
+        if (!filePath) continue;
+        const resolved = validateAndResolve(filePath, true);
+        const dir = path.dirname(resolved);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+        if (fs.existsSync(resolved)) {
+          if (!fileBackups.has(resolved)) fileBackups.set(resolved, []);
+          fileBackups.get(resolved).push(fs.readFileSync(resolved, 'utf-8'));
+        }
+
+        fs.writeFileSync(resolved, item.content !== undefined ? item.content : '', 'utf-8');
+        const stat = fs.statSync(resolved);
+        results.push(`- ${filePath} (${stat.size} bytes)`);
+      }
+
+      return `Successfully wrote ${results.length} files:\n${results.join('\n')}`;
+    }
+
     case 'search_files': {
       const targetRel = args.path || '.';
       const query = args.query;
@@ -1282,7 +1334,7 @@ async function processJsonRpcMessage(msg) {
         },
         serverInfo: {
           name: 'Bridge',
-          version: '1.0.12'
+          version: '1.0.13'
         }
       }
     };
@@ -1414,6 +1466,11 @@ function startHttpServer(port) {
     if (req.method === 'GET' && (url.pathname === '/mcp' || url.pathname === '/' || url.pathname === '/sse')) {
       // Support standard MCP Server-Sent Events (SSE) streaming transport
       if (req.headers.accept && req.headers.accept.includes('text/event-stream')) {
+        if (req.socket) {
+          req.socket.setKeepAlive(true, 10000);
+          req.socket.setNoDelay(true);
+        }
+
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache, no-transform',
@@ -1422,8 +1479,10 @@ function startHttpServer(port) {
           'Access-Control-Allow-Origin': '*'
         });
 
+        const proto = req.headers['x-forwarded-proto'] || (req.socket && req.socket.encrypted ? 'https' : 'http');
+        const host = req.headers['x-forwarded-host'] || req.headers.host;
         const sessionId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
-        const endpointUri = `/mcp?sessionId=${sessionId}`;
+        const endpointUri = `${proto}://${host}/mcp?sessionId=${sessionId}`;
 
         // Send a 2KB whitespace comment to force Cloudflare proxy buffer to flush immediately!
         res.write(`: ${' '.repeat(2048)}\n\n`);
@@ -1432,6 +1491,7 @@ function startHttpServer(port) {
         const keepAlive = setInterval(() => {
           try {
             res.write(': ping\n\n');
+            res.write('event: ping\ndata: {}\n\n');
           } catch (e) {
             clearInterval(keepAlive);
             sseSessions.delete(sessionId);
@@ -1440,10 +1500,14 @@ function startHttpServer(port) {
 
         sseSessions.set(sessionId, { res, keepAlive });
 
-        req.on('close', () => {
+        const cleanup = () => {
           clearInterval(keepAlive);
           sseSessions.delete(sessionId);
-        });
+        };
+        req.on('close', cleanup);
+        req.on('error', cleanup);
+        res.on('close', cleanup);
+        res.on('error', cleanup);
         return;
       }
 
@@ -1466,7 +1530,7 @@ function startHttpServer(port) {
         info: {
           title: 'Bridge MCP API',
           description: 'Full software engineering harness: execution, background jobs, git, dependency analysis, atomic undo, and filesystem.',
-          version: '1.0.12'
+          version: '1.0.13'
         },
         servers: [{ url: `https://${req.headers.host}` }],
         paths: {
@@ -1519,6 +1583,7 @@ function startHttpServer(port) {
         status: 'online',
         activeProject: rootDir,
         toolsCount: tools.length,
+        activeSseSessions: sseSessions.size,
         isReadOnly: isReadOnly,
         uptime: process.uptime()
       }));

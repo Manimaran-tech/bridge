@@ -313,7 +313,7 @@ const subcommand = rawCliArgs[0] ? rawCliArgs[0].toLowerCase() : '';
 const bridgeConfig = readBridgeConfig();
 let activeProjectDir = rawCliArgs[0] && subcommand !== 'setup' ? path.resolve(rawCliArgs[0]) : null;
 let mcpTunnelUrl = '';
-const CURRENT_VERSION = '1.0.12';
+const CURRENT_VERSION = '1.0.13';
 let updateAvailable = null;
 
 function checkForUpdates() {
