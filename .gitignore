@@ -27,3 +27,7 @@ desktop.ini
 # Environment
 .env
 .env.local
+
+# Local Internal Notes & Strategy
+GROWTH_STRATEGY.md
+*.local.md
