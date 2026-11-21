@@ -1,6 +1,6 @@
 {
   "name": "@markmayandi/bridge",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Universal Local-to-Web AI Coding Harness — Connect Local Workspaces to Gemini, Claude, ChatGPT & DeepSeek via Secure MCP",
   "main": "bridge.js",
   "bin": {

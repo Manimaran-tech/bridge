@@ -398,7 +398,23 @@ const subcommand = rawCliArgs[0] ? rawCliArgs[0].toLowerCase() : '';
 const bridgeConfig = readBridgeConfig();
 let activeProjectDir = rawCliArgs[0] && subcommand !== 'setup' ? path.resolve(rawCliArgs[0]) : null;
 let mcpTunnelUrl = '';
-const CURRENT_VERSION = '1.1.0';
+// Version comes from package.json so the UI always shows the installed release.
+const CURRENT_VERSION = (() => {
+  try { return require('./package.json').version || '0.0.0'; } catch (e) { return '0.0.0'; }
+})();
+// Numeric semver compare: >0 if a is newer than b. Pre-release tags count as older.
+function compareVersions(a, b) {
+  const parse = (v) => {
+    const [core, pre] = String(v).replace(/^v/, '').split('-');
+    return { nums: core.split('.').map(n => parseInt(n, 10) || 0), pre: !!pre };
+  };
+  const x = parse(a), y = parse(b);
+  for (let i = 0; i < 3; i++) {
+    const d = (x.nums[i] || 0) - (y.nums[i] || 0);
+    if (d) return d;
+  }
+  return (x.pre === y.pre) ? 0 : (x.pre ? -1 : 1);
+}
 // The auth token is saved in ~/.bridge/config.json so AI connectors keep working across
 // restarts. `bridge rotate-token` replaces it (all connected clients must re-paste the URL).
 function loadOrCreateAuthToken() {
@@ -424,7 +440,7 @@ function checkForUpdates() {
         res.on('end', () => {
           try {
             const data = JSON.parse(raw);
-            if (data.version && data.version !== CURRENT_VERSION) {
+            if (data.version && compareVersions(data.version, CURRENT_VERSION) > 0) {
               updateAvailable = data.version;
               if (!isNavigatingFolders && !isEstablishingTunnel) renderDashboard();
             }

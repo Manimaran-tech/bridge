@@ -21,6 +21,16 @@ const readline = require('readline');
 const http = require('http');
 const crypto = require('crypto');
 const os = require('os');
+// Report the installed Bridge release (root package.json), not a hardcoded string.
+const BRIDGE_VERSION = (() => {
+  for (const p of [path.join(__dirname, '..', 'package.json'), path.join(__dirname, 'package.json')]) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (pkg.name === '@markmayandi/bridge' && pkg.version) return pkg.version;
+    } catch (e) {}
+  }
+  return '0.0.0';
+})();
 const { exec, spawn, execSync } = require('child_process');
 
 // ==========================================
@@ -2033,7 +2043,7 @@ async function processJsonRpcMessage(msg) {
         },
         serverInfo: {
           name: 'Bridge',
-          version: '1.1.0'
+          version: BRIDGE_VERSION
         }
       }
     };
@@ -2292,7 +2302,7 @@ function startHttpServer(port) {
         info: {
           title: 'Bridge MCP API',
           description: 'Full software engineering harness: execution, background jobs, git, dependency analysis, atomic undo, and filesystem.',
-          version: '1.1.0'
+          version: BRIDGE_VERSION
         },
         servers: [{ url: `https://${req.headers.host}` }],
         paths: {
