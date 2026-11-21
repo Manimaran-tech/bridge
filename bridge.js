@@ -88,18 +88,25 @@ function readBridgeConfig() {
     const parsed = JSON.parse(fs.readFileSync(bridgeConfigPath, 'utf8'));
     return {
       tunnelToken: typeof parsed.tunnelToken === 'string' ? parsed.tunnelToken.trim() : '',
-      publicUrl: normalizePublicUrl(parsed.publicUrl)
+      publicUrl: normalizePublicUrl(parsed.publicUrl),
+      authToken: typeof parsed.authToken === 'string' && /^[a-f0-9]{32,}$/i.test(parsed.authToken) ? parsed.authToken : '',
+      approvalMode: ['turbo', 'review', 'default', 'auto'].includes(parsed.approvalMode) ? parsed.approvalMode : 'default'
     };
   } catch (e) {
-    return { tunnelToken: '', publicUrl: '' };
+    return { tunnelToken: '', publicUrl: '', authToken: '', approvalMode: 'default' };
   }
 }
 
 function writeBridgeConfig(config) {
   fs.mkdirSync(bridgeHomeDir, { recursive: true, mode: 0o700 });
+  // Merge with what is on disk so saving one field never drops another (e.g. the auth token).
+  const existing = readBridgeConfig();
+  const merged = { ...existing, ...config };
   const payload = JSON.stringify({
-    tunnelToken: String(config.tunnelToken || '').trim(),
-    publicUrl: normalizePublicUrl(config.publicUrl)
+    tunnelToken: String(merged.tunnelToken || '').trim(),
+    publicUrl: normalizePublicUrl(merged.publicUrl),
+    authToken: String(merged.authToken || ''),
+    approvalMode: merged.approvalMode || 'default'
   }, null, 2) + '\n';
   fs.writeFileSync(bridgeConfigPath, payload, { mode: 0o600 });
   try { fs.chmodSync(bridgeConfigPath, 0o600); } catch (e) {}
@@ -295,11 +302,88 @@ async function ensureCloudflaredBinary() {
   return cachedPath;
 }
 
-const getCols = () => Math.max(80, process.stdout.columns || 100);
-const getRows = () => Math.max(20, process.stdout.rows || 30);
+// ---- Adaptive layout helpers ----
+// Use the real terminal size (no fake minimums: drawing 80 columns into a 60-column window
+// makes every line wrap and the whole frame scroll). Frames are drawn one column narrower
+// than the window so no terminal auto-wraps at the last column.
+const getCols = () => Math.max(20, process.stdout.columns || 100);
+const getRows = () => Math.max(8, process.stdout.rows || 30);
+const getFrameWidth = () => Math.max(19, getCols() - 1);
+// Layout tiers: the big ASCII emblem needs room; small windows get a one-line header.
+const isCompact = () => getCols() < 82 || getRows() < 30;
 
 function stripAnsi(s) {
-  return s.replace(/\x1b\[[0-9;]*m/g, '');
+  return String(s).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+}
+
+function visibleWidth(s) {
+  return Array.from(stripAnsi(s)).length;
+}
+
+// Cut a styled line to `width` visible characters without breaking ANSI codes.
+function fitLine(line, width) {
+  line = String(line);
+  if (visibleWidth(line) <= width) return line;
+  let out = '';
+  let count = 0;
+  const re = /\x1b\[[0-9;?]*[A-Za-z]/y;
+  for (let i = 0; i < line.length;) {
+    re.lastIndex = i;
+    const m = re.exec(line);
+    if (m) { out += m[0]; i += m[0].length; continue; }
+    const cp = line.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    if (count >= width - 1) { out += '…'; break; }
+    out += ch;
+    count++;
+    i += ch.length;
+  }
+  return out + C.reset;
+}
+
+// Shorten the middle of a plain string (good for paths and URLs): "C:\Users\…\project".
+function middleEllipsis(text, max) {
+  text = String(text);
+  if (max <= 1) return text.slice(0, Math.max(0, max));
+  if (text.length <= max) return text;
+  const keep = max - 1;
+  const head = Math.ceil(keep * 0.4);
+  return text.slice(0, head) + '…' + text.slice(text.length - (keep - head));
+}
+
+// Left text + right text on one line; drops the right part when there is no room.
+function spreadLine(left, right, width) {
+  const gap = width - visibleWidth(left) - visibleWidth(right);
+  if (gap >= 2) return left + ' '.repeat(gap) + right;
+  return left;
+}
+
+// Lay out "[K] Label" items over as many lines as the width needs.
+function flowItems(items, width, indent = '  ', sep = '   ') {
+  const lines = [];
+  let current = indent;
+  for (const item of items) {
+    const candidate = current.trim() ? current + sep + item : current + item;
+    if (visibleWidth(candidate) > width && current.trim()) {
+      lines.push(current);
+      current = indent + item;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.trim()) lines.push(current);
+  return lines;
+}
+
+const centerPad = (text, width) => ' '.repeat(Math.max(0, Math.floor((width - visibleWidth(text)) / 2)));
+
+// Draw a full frame in place: every line clipped to the window, old content cleared per line,
+// exactly `rows` lines (no scroll, no flicker from clearing the whole screen first).
+function paintFrame(lines) {
+  const rows = getRows();
+  const width = getFrameWidth();
+  const visible = lines.slice(0, rows).map(l => fitLine(l, width) + C.reset + '\x1b[K');
+  process.stdout.write('\x1b[H' + visible.join('\n') + '\x1b[J');
 }
 
 const UI_WIDTH = 100;
@@ -314,8 +398,21 @@ const subcommand = rawCliArgs[0] ? rawCliArgs[0].toLowerCase() : '';
 const bridgeConfig = readBridgeConfig();
 let activeProjectDir = rawCliArgs[0] && subcommand !== 'setup' ? path.resolve(rawCliArgs[0]) : null;
 let mcpTunnelUrl = '';
-const CURRENT_VERSION = '1.0.14';
-const bridgeAuthToken = process.env.BRIDGE_TOKEN || process.env.BRIDGE_AUTH_TOKEN || crypto.randomBytes(24).toString('hex');
+const CURRENT_VERSION = '1.1.0';
+// The auth token is saved in ~/.bridge/config.json so AI connectors keep working across
+// restarts. `bridge rotate-token` replaces it (all connected clients must re-paste the URL).
+function loadOrCreateAuthToken() {
+  const fromEnv = process.env.BRIDGE_TOKEN || process.env.BRIDGE_AUTH_TOKEN;
+  if (fromEnv) return fromEnv;
+  if (bridgeConfig.authToken) return bridgeConfig.authToken;
+  const fresh = crypto.randomBytes(24).toString('hex');
+  try { writeBridgeConfig({ authToken: fresh }); } catch (e) {}
+  return fresh;
+}
+const bridgeAuthToken = subcommand === 'setup' || subcommand === 'rotate-token' ? '' : loadOrCreateAuthToken();
+const maskToken = (t) => (t ? `${t.slice(0, 6)}…${t.slice(-4)}` : '');
+// Port: named tunnels are configured for localhost:3000 in Cloudflare, quick tunnels can use any free port.
+let bridgePort = 3000;
 let updateAvailable = null;
 
 function checkForUpdates() {
@@ -349,6 +446,130 @@ let isNavigatingFolders = false;
 let isEstablishingTunnel = false;
 const recentLogs = [];
 
+// Approval requests from the MCP server (deletes, sandbox switches). Answered with Y/N.
+const approvalQueue = [];
+let confirmingExit = false;
+let choosingMode = false;
+
+// Approval modes (how often the AI must ask before acting). Harmful commands are blocked in all of them.
+const APPROVAL_MODES = [
+  { id: 'turbo', key: '1', name: 'TURBO', short: 'never asks', desc: 'Never asks. Writes, commands and deletes run immediately (harmful commands still blocked).' },
+  { id: 'review', key: '2', name: 'REVIEW', short: 'asks every change', desc: 'Asks before every change: each write, edit, command, job and delete.' },
+  { id: 'default', key: '3', name: 'DEFAULT', short: 'asks for deletes', desc: 'Asks for deletes, destructive git, secret files and new project folders.' },
+  { id: 'auto', key: '4', name: 'AUTO', short: 'asks if not undoable', desc: 'Bridge decides by risk: asks only for actions it cannot undo.' }
+];
+const modeFromFlag = (process.argv.find(a => a.startsWith('--mode=')) || '').split('=')[1];
+let approvalMode = APPROVAL_MODES.some(m => m.id === modeFromFlag) ? modeFromFlag : (bridgeConfig.approvalMode || 'default');
+const modeInfo = (id) => APPROVAL_MODES.find(m => m.id === id) || APPROVAL_MODES[2];
+
+function setApprovalMode(id) {
+  if (!APPROVAL_MODES.some(m => m.id === id)) return;
+  approvalMode = id;
+  try { writeBridgeConfig({ approvalMode: id }); } catch (e) {}
+  try { if (serverProcess && serverProcess.connected) serverProcess.send({ type: 'set-approval-mode', mode: id }); } catch (e) {}
+  const m = modeInfo(id);
+  const color = id === 'turbo' ? C.redBold : C.voltBold;
+  setFlash(`  ${color}● [MODE: ${m.name}]${C.reset} ${C.white}${m.desc}${C.reset}`, 6000);
+}
+let isShuttingDown = false;
+let tunnelAlive = false;
+
+// ---- MCP server supervisor: restart on crash with backoff, show real status ----
+let serverStatus = 'starting'; // starting | online | restarting | failed
+let serverStartedAt = 0;
+let serverRestarts = 0;
+let serverRestartTimer = null;
+
+function pushLog(line) {
+  recentLogs.push(`${C.slate}[${new Date().toLocaleTimeString()}]${C.reset} ${line}`);
+  if (recentLogs.length > 200) recentLogs.shift();
+}
+
+function startServerProcess() {
+  serverStatus = serverRestarts > 0 ? 'restarting' : 'starting';
+  serverStartedAt = Date.now();
+  const child = spawn(process.execPath, [serverScript, activeProjectDir, '--http', String(bridgePort), '--token', bridgeAuthToken, '--approval-mode', approvalMode], {
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'], // ipc channel carries delete/approval prompts
+    windowsHide: true
+  });
+  serverProcess = child;
+  child.on('message', handleServerMessage);
+
+  child.stderr.on('data', (chunk) => {
+    const lines = chunk.toString().split('\n').filter(l => l.trim());
+    lines.forEach(l => {
+      if (/listening on/i.test(l)) serverStatus = 'online';
+      pushLog(l);
+    });
+    if (showLiveLogs || /listening on/i.test(chunk.toString())) renderDashboard();
+  });
+  child.stdout.on('data', () => {});
+
+  child.on('exit', (code, signal) => {
+    if (isShuttingDown || serverProcess !== child) return;
+    // Pending approvals belonged to the dead process; drop them.
+    approvalQueue.length = 0;
+    // Reset the backoff if the server had been healthy for a minute.
+    if (Date.now() - serverStartedAt > 60000) serverRestarts = 0;
+    serverRestarts++;
+    if (serverRestarts > 6) {
+      serverStatus = 'failed';
+      pushLog(`MCP server keeps crashing (exit ${code ?? signal}). Restart Bridge; check the logs above.`);
+      setFlash(`  ${C.redBold}● [SERVER DOWN]${C.reset} ${C.white}MCP server crashed repeatedly. Press [L] for logs, restart Bridge.${C.reset}`, 15000);
+      return;
+    }
+    const delay = Math.min(10000, 500 * 2 ** (serverRestarts - 1));
+    serverStatus = 'restarting';
+    pushLog(`MCP server exited (${code ?? signal}); restarting in ${Math.round(delay / 100) / 10}s...`);
+    setFlash(`  ${C.redBold}● [SERVER RESTARTING]${C.reset} ${C.white}MCP server stopped unexpectedly. Restarting...${C.reset}`, Math.max(3000, delay));
+    serverRestartTimer = setTimeout(() => {
+      freePort(bridgePort);
+      startServerProcess();
+      renderDashboard();
+    }, delay);
+  });
+
+  child.on('error', (err) => {
+    pushLog(`Could not start MCP server: ${err.message}`);
+  });
+}
+
+function answerApproval(approved) {
+  const req = approvalQueue.shift();
+  if (!req) return;
+  try { serverProcess.send({ type: 'approval-response', id: req.id, approved }); } catch (e) {}
+  const verdict = approved ? `${C.voltBold}● [APPROVED]` : `${C.redBold}● [DENIED]`;
+  recentLogs.push(`${C.slate}[${new Date().toLocaleTimeString()}]${C.reset} ${approved ? 'APPROVED' : 'DENIED'}: ${req.action} ${req.detail}`);
+  if (recentLogs.length > 50) recentLogs.shift();
+  setFlash(`  ${verdict}${C.reset} ${C.white}${req.action}: ${req.detail.slice(0, 120)}${C.reset}`, 4000);
+}
+
+function handleServerMessage(msg) {
+  if (!msg || typeof msg !== 'object') return;
+  if (msg.type === 'approval-request') {
+    approvalQueue.push({
+      id: msg.id,
+      action: String(msg.action || 'Action'),
+      detail: String(msg.detail || ''),
+      reason: String(msg.reason || ''),
+      receivedAt: Date.now()
+    });
+    process.stdout.write('\x07'); // terminal bell so the user notices
+    if (!isNavigatingFolders && !isEstablishingTunnel) renderDashboard();
+  } else if (msg.type === 'approval-mode' && msg.mode) {
+    approvalMode = msg.mode;
+  } else if (msg.type === 'project-changed' && msg.path) {
+    activeProjectDir = String(msg.path);
+    setFlash(`  ${C.voltBold}● [SWITCHED]${C.reset} ${C.white}AI switched project folder to: ${C.voltBold}${activeProjectDir}${C.reset}`, 5000);
+  } else if (msg.type === 'approval-cancel') {
+    const idx = approvalQueue.findIndex(r => r.id === msg.id);
+    if (idx !== -1) {
+      const [req] = approvalQueue.splice(idx, 1);
+      setFlash(`  ${C.redBold}● [TIMED OUT]${C.reset} ${C.white}No answer, denied: ${req.detail.slice(0, 120)}${C.reset}`, 4000);
+    }
+  }
+}
+
 function setFlash(msg, durationMs = 3000) {
   flashNotification = msg;
   if (flashTimer) clearTimeout(flashTimer);
@@ -360,26 +581,64 @@ function setFlash(msg, durationMs = 3000) {
 }
 
 function copyToClipboard(text) {
-  try {
-    if (process.platform === 'win32') {
-      const proc = spawn('clip');
-      proc.stdin.write(text);
-      proc.stdin.end();
+  const candidates = process.platform === 'win32' ? [['clip', []]]
+    : process.platform === 'darwin' ? [['pbcopy', []]]
+    : [['wl-copy', []], ['xclip', ['-selection', 'clipboard']], ['xsel', ['--clipboard', '--input']]];
+  for (const [bin, binArgs] of candidates) {
+    try {
+      execSync(`${bin} ${binArgs.join(' ')}`, { input: text, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
       return true;
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
   return false;
 }
 
-function freePort(port) {
+// Returns the PIDs listening on a local port, with their command lines.
+function getPortOwners(port) {
   try {
     if (process.platform === 'win32') {
-      // Only release Bridge's own port. Never kill unrelated cloudflared
-      // tunnels that may belong to the user's existing setup.
-      const psCmd = `Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }`;
-      execSync(`powershell -NoProfile -Command "${psCmd}"`, { stdio: 'ignore' });
+      const ps = `Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $_.OwningProcess); '' + $_.OwningProcess + '|' + $p.CommandLine }`;
+      const out = execSync(`powershell -NoProfile -NonInteractive -Command "${ps}"`, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).toString();
+      return out.split(/\r?\n/).filter(Boolean).map(l => {
+        const i = l.indexOf('|');
+        return { pid: Number(l.slice(0, i)), cmd: l.slice(i + 1) };
+      }).filter(o => o.pid > 0);
     }
-  } catch (e) {}
+    const out = execSync(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    return out.split(/\s+/).filter(Boolean).map(pid => {
+      let cmd = '';
+      try { cmd = execSync(`ps -o args= -p ${pid}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString(); } catch (e) {}
+      return { pid: Number(pid), cmd };
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+const isBridgeServerCmd = (cmd) => /secure-folder-mcp[\\/]+server\.js/i.test(cmd || '');
+
+// Free a port only if it is held by a stale Bridge server. Never kill the user's own apps
+// (port 3000 is the default for React/Next/Express dev servers). Returns true if the port is free.
+function freePort(port) {
+  const owners = getPortOwners(port);
+  let blocked = false;
+  for (const o of owners) {
+    if (isBridgeServerCmd(o.cmd)) {
+      try { process.kill(o.pid); } catch (e) {}
+    } else {
+      blocked = true;
+    }
+  }
+  return !blocked;
+}
+
+function choosePort(useNamedTunnel) {
+  if (freePort(3000)) return 3000;
+  if (useNamedTunnel) return null; // the named tunnel's ingress points at localhost:3000
+  for (let p = 3001; p <= 3020; p++) {
+    if (getPortOwners(p).length === 0) return p;
+  }
+  return null;
 }
 
 function switchProjectDirectory(newPath) {
@@ -394,7 +653,7 @@ function switchProjectDirectory(newPath) {
   // Notify running server
   const req = http.request({
     hostname: '127.0.0.1',
-    port: 3000,
+    port: bridgePort,
     path: '/api/set-directory',
     method: 'POST',
     headers: {
@@ -417,10 +676,19 @@ function switchProjectDirectory(newPath) {
   req.end();
 }
 
-function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
-  const barWidth = Math.max(78, cols - 2);
+function renderAsciiHeaderToOut(out, badgeText = '') {
+  const barWidth = getFrameWidth();
   const thickBar = '━'.repeat(barWidth);
   const thinBar = '─'.repeat(barWidth);
+
+  // Small window: one-line brand header instead of the 8-line emblem.
+  if (isCompact()) {
+    out.push(`${C.voltBold}${thickBar}${C.reset}`);
+    const brand = `  ${C.voltBold}B R I D G E${C.reset}${badgeText ? '  ' + badgeText : ''}`;
+    out.push(spreadLine(brand, `${C.steel}v${CURRENT_VERSION}${C.reset}`, barWidth));
+    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
+    return;
+  }
 
   const baseLines = [
     `${C.voltBold}██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗${C.reset}    ${C.steel}╔══════╗${C.reset}          ${C.cyan}╔══╗  ╔══╗${C.reset}`,
@@ -442,17 +710,15 @@ function renderAsciiHeaderToOut(out, badgeText = '', cols = getCols()) {
 
   if (badgeText) {
     const rightInfo = `${C.steel}v${CURRENT_VERSION} • HIGH-SPEED AI MCP HARNESS${C.reset}`;
-    const leftText = `  ${badgeText}`;
-    const spaceCount = Math.max(2, barWidth - stripAnsi(leftText).length - stripAnsi(rightInfo).length);
-    out.push(leftText + ' '.repeat(spaceCount) + rightInfo);
+    out.push(spreadLine(`  ${badgeText}`, rightInfo, barWidth));
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
   }
 }
 
 function renderAsciiHeader(badgeText = '') {
   const out = [];
-  renderAsciiHeaderToOut(out, badgeText, getCols());
-  console.log(out.join('\n'));
+  renderAsciiHeaderToOut(out, badgeText);
+  console.log(out.map(l => fitLine(l, getFrameWidth())).join('\n'));
 }
 
 /**
@@ -482,7 +748,7 @@ const BRIDGE_WIRE_ASCII = [
 
 async function playInitialLoadingAnimation(durationMs = 2200) {
   // Enter alternate buffer and hide cursor - NO frames ever enter scrollback!
-  process.stdout.write('\x1b[?1049h\x1b[?25l');
+  process.stdout.write('\x1b[?1049h\x1b[?25l\x1b[2J');
   const startTime = Date.now();
   const logoWidth = 68;
 
@@ -490,81 +756,56 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
     const elapsed = Date.now() - startTime;
     const progress = Math.min(1.0, elapsed / durationMs);
 
-    const cols = getCols();
+    const cols = getFrameWidth();
     const rows = getRows();
-
-    const barWidth = Math.max(78, cols - 2);
-    const thickBar = '━'.repeat(barWidth);
-    const thinBar = '─'.repeat(barWidth);
+    const thickBar = '━'.repeat(cols);
+    const thinBar = '─'.repeat(cols);
+    // The bridge artwork is 68x16; only draw it when it fits with the text around it.
+    const showArt = cols >= logoWidth + 2 && rows >= BRIDGE_WIRE_ASCII.length + 12;
 
     const out = [];
-
-    // Full-width top frame
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
-    const topHeader = `  ${C.voltBold}BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS${C.reset}`;
-    const topVersion = `${C.steel}v${CURRENT_VERSION}  •  ANYCAST MCP TUNNEL  •  AES-256-GCM  ${C.reset}`;
-    const topSpaces = Math.max(2, barWidth - stripAnsi(topHeader).length - stripAnsi(topVersion).length);
-    out.push(topHeader + ' '.repeat(topSpaces) + topVersion);
+    const topHeader = `  ${C.voltBold}${cols >= 60 ? 'BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS' : 'BRIDGE'}${C.reset}`;
+    out.push(spreadLine(topHeader, `${C.steel}v${CURRENT_VERSION}  ${C.reset}`, cols));
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
 
-    // Vertical padding to center bridge art vertically
-    const contentLines = 16 + 2 + 1 + 1 + 1 + 1 + 1; // 24 lines
-    const topMargin = Math.max(0, Math.floor((rows - 5 - contentLines) / 2));
-    for (let i = 0; i < topMargin; i++) {
-      out.push('');
+    const body = [];
+    if (showArt) {
+      const padLeft = ' '.repeat(Math.max(0, Math.floor((cols - logoWidth) / 2)));
+      for (const line of BRIDGE_WIRE_ASCII) body.push(padLeft + line);
+      body.push('');
     }
+    const titleText = `${C.voltBold}${cols >= 30 ? 'B   R   I   D   G   E' : 'BRIDGE'}${C.reset}`;
+    body.push(centerPad(titleText, cols) + titleText);
 
-    // 1. High-density compact suspension bridge wires and towers (68 cols x 16 rows) centered
-    const padLeft = ' '.repeat(Math.max(0, Math.floor((cols - logoWidth) / 2)));
-    for (const line of BRIDGE_WIRE_ASCII) {
-      out.push(padLeft + line);
-    }
-
-    // 2. Vertical gap between bridge and text
-    out.push('');
-    out.push('');
-
-    // 3. Wide-tracked title & adaptive subtitle
-    const titleText = `${C.voltBold}B   R   I   D   G   E${C.reset}`;
-    out.push(' '.repeat(Math.max(0, Math.floor((cols - 21) / 2))) + titleText);
-
-    const leftEndpoint = '[LOCAL WORKSPACE]';
-    const rightEndpoint = '[CLOUD AI MODEL]';
-    const trackWidth = Math.min(cols - 10, Math.max(48, Math.floor(cols * 0.6)));
-    const dashCount = Math.max(4, Math.floor((trackWidth - leftEndpoint.length - rightEndpoint.length - 3) / 2));
+    const leftEndpoint = cols >= 60 ? '[LOCAL WORKSPACE]' : '[LOCAL]';
+    const rightEndpoint = cols >= 60 ? '[CLOUD AI MODEL]' : '[CLOUD AI]';
+    const trackWidth = Math.min(cols - 4, Math.max(20, Math.floor(cols * 0.6)));
+    const dashCount = Math.max(1, Math.floor((trackWidth - leftEndpoint.length - rightEndpoint.length - 3) / 2));
     const subTitle = `${C.steel}${leftEndpoint} ${C.voltBold}${'─'.repeat(dashCount)}━${'─'.repeat(dashCount)}${C.cyanBold} ${rightEndpoint}${C.reset}`;
-    out.push(' '.repeat(Math.max(0, Math.floor((cols - stripAnsi(subTitle).length) / 2))) + subTitle);
-    out.push('');
+    body.push(centerPad(subTitle, cols) + subTitle);
+    body.push('');
 
-    // 4. Smooth adaptive progress bar
-    const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
+    const barLen = Math.max(8, Math.min(76, Math.floor(cols * 0.58), cols - 10));
     const pct = Math.min(100, Math.round(progress * 100));
     const filled = Math.min(barLen, Math.round(progress * barLen));
-    const empty = barLen - filled;
-    const barStr = C.voltBold + '█'.repeat(filled) + C.steel + '░'.repeat(empty) + C.reset;
-    const barLine = `[${barStr}]  ${C.voltBold}${pct}%${C.reset}`;
-    const barPad = ' '.repeat(Math.max(0, Math.floor((cols - stripAnsi(barLine).length) / 2)));
-    out.push(`${barPad}${barLine}`);
+    const barLine = `[${C.voltBold}${'█'.repeat(filled)}${C.steel}${'░'.repeat(barLen - filled)}${C.reset}]  ${C.voltBold}${pct}%${C.reset}`;
+    body.push(centerPad(barLine, cols) + barLine);
 
-    const statusMsg = progress >= 1.0 ? 'BRIDGE READY — ANYCAST TUNNEL ACTIVE' : 'INITIALIZING SECURE ANYCAST TUNNEL...';
-    const statusPad = ' '.repeat(Math.max(0, Math.floor((cols - statusMsg.length) / 2)));
-    out.push(`${statusPad}${C.whiteBold}${statusMsg}${C.reset}`);
+    const statusMsg = progress >= 1.0 ? 'BRIDGE READY' : 'STARTING BRIDGE...';
+    body.push(centerPad(statusMsg, cols) + `${C.whiteBold}${statusMsg}${C.reset}`);
 
-    // Fill remaining vertical space down to bottom frame
-    const remaining = rows - out.length - 2;
-    for (let i = 0; i < remaining; i++) {
-      out.push('');
-    }
+    // Center the body vertically between the header and the pinned bottom bar.
+    const free = rows - out.length - 1 - body.length;
+    const topMargin = Math.max(0, Math.floor(free / 2));
+    for (let i = 0; i < topMargin; i++) out.push('');
+    out.push(...body);
+    while (out.length < rows - 1) out.push('');
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
-    // Clamped strictly to rows - 1, in-place redraw with cursor home (NO trailing newline!)
-    const clamped = out.slice(0, rows - 1);
-    process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
+    paintFrame(out);
 
-    if (progress >= 1.0) {
-      break;
-    }
-
+    if (progress >= 1.0) break;
     await new Promise(r => setTimeout(r, 35));
   }
 
@@ -572,110 +813,81 @@ async function playInitialLoadingAnimation(durationMs = 2200) {
 }
 
 async function playTunnelCreationAnimation(getTunnelUrlFn, minDurationMs = 2500, maxDurationMs = 20000) {
-  process.stdout.write('\x1b[?1049h\x1b[?25l');
+  process.stdout.write('\x1b[?1049h\x1b[?25l\x1b[2J');
 
   const startTime = Date.now();
   let frame = 0;
 
-  const packetTracks = [
-    '═══▶═════════════════ ( ∞ ) ══════════════════════',
-    '══════▶══════════════ ( ∞ ) ══════════════════════',
-    '═════════▶═══════════ ( ∞ ) ══════════════════════',
-    '════════════▶════════ ( ∞ ) ══════════════════════',
-    '═══════════════▶═════ ( ∞ ) ══════════════════════',
-    '══════════════════▶══ ( ∞ ) ══════════════════════',
-    '═════════════════════ ( ✦ ) ═══▶══════════════════',
-    '═════════════════════ ( ∞ ) ══════▶═══════════════',
-    '═════════════════════ ( ∞ ) ═════════▶════════════',
-    '═════════════════════ ( ∞ ) ════════════▶═════════',
-    '═════════════════════ ( ∞ ) ═══════════════▶══════',
-    '═════════════════════ ( ∞ ) ══════════════════▶═══',
-    '═════════════════════ ( ∞ ) ═══════════════◀══════',
-    '═════════════════════ ( ∞ ) ════════════◀═════════',
-    '═════════════════════ ( ✦ ) ═══◀══════════════════',
-    '══════════════════◀══ ( ∞ ) ══════════════════════',
-    '═══════════════◀═════ ( ∞ ) ══════════════════════',
-    '════════════◀════════ ( ∞ ) ══════════════════════',
-    '═════════◀═══════════ ( ∞ ) ══════════════════════',
-    '══════◀══════════════ ( ∞ ) ══════════════════════'
-  ];
-
   const spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const stages = [
-    'Mounting Bridge & Local Project Sandbox...',
-    'Connecting to Cloudflare Global Anycast Edge...',
-    'Allocating Public HTTPS Quantum Tunnel for MCP...',
-    'Finalizing Secure WebSocket & SSE Streaming...'
+    'Mounting Bridge & local project sandbox...',
+    'Connecting to Cloudflare edge...',
+    'Allocating public HTTPS tunnel for MCP...',
+    'Finalizing SSE streaming...'
   ];
+
+  // Packet track scales with the window: "[LOCAL PC] ═══▶═══ ( ∞ ) ═══════ [CLOUD AI]"
+  function buildTrack(width, step, done) {
+    const left = width >= 50 ? '[LOCAL PC] ' : '[PC] ';
+    const right = width >= 50 ? ' [CLOUD AI]' : ' [AI]';
+    const inner = Math.max(9, width - left.length - right.length - 4);
+    const half = Math.floor((inner - 5) / 2);
+    const chars = ('═'.repeat(half) + ' ( ∞ ) ' + '═'.repeat(inner - 5 - half - 2)).split('');
+    if (!done) {
+      const span = chars.length;
+      const pos = step % (span * 2);
+      const idx = pos < span ? pos : span * 2 - pos - 1;
+      if (chars[idx] === '═') chars[idx] = pos < span ? '▶' : '◀';
+    }
+    return left + chars.join('') + right;
+  }
+
+  function drawFrame(badge, statusLine, pct, url) {
+    const cols = getFrameWidth();
+    const rows = getRows();
+    const thickBar = '━'.repeat(cols);
+    const thinBar = '─'.repeat(cols);
+    const barLen = Math.max(8, Math.min(76, Math.floor(cols * 0.58), cols - 6));
+    const filled = Math.round((pct / 100) * barLen);
+
+    const out = [];
+    renderAsciiHeaderToOut(out, badge);
+    out.push(`  ${C.cyanBold}${buildTrack(cols - 2, frame, pct >= 100)}${C.reset}`);
+    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
+    out.push(statusLine);
+    out.push(`  [${C.voltBold}${'█'.repeat(filled)}${C.steel}${'░'.repeat(barLen - filled)}${C.reset}]`);
+    if (url) out.push(`  ${C.voltBold}● MCP URL: ${C.cyanBold}${middleEllipsis(url, Math.max(10, cols - 14))}${C.reset}`);
+    else out.push(`  ${C.slate}● ${stages[Math.min(stages.length - 1, Math.floor((frame / 6) % stages.length))]}${C.reset}`);
+    while (out.length < rows - 1) out.push('');
+    out.push(`${C.voltBold}${thickBar}${C.reset}`);
+    paintFrame(out);
+  }
 
   while (true) {
     const elapsed = Date.now() - startTime;
     const url = getTunnelUrlFn();
-
-    if ((url && elapsed >= minDurationMs) || elapsed >= maxDurationMs) {
-      break;
-    }
+    if ((url && elapsed >= minDurationMs) || elapsed >= maxDurationMs) break;
 
     let progress = Math.min(0.92, (elapsed / (minDurationMs + 800)));
     if (url) progress = 0.98;
     const pct = Math.round(progress * 100);
-
-    const cols = getCols();
-    const rows = getRows();
-    const barWidth = Math.max(78, cols - 2);
-    const thickBar = '━'.repeat(barWidth);
-    const thinBar = '─'.repeat(barWidth);
-
-    const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
-    const filled = Math.round(progress * barLen);
-    const empty = barLen - filled;
-    const bar = C.voltBold + '█'.repeat(filled) + C.steel + '░'.repeat(empty) + C.reset;
-
     const spinner = spinners[frame % spinners.length];
-    const trackPattern = packetTracks[frame % packetTracks.length];
-    const stageIdx = Math.min(stages.length - 1, Math.floor((frame / 6) % stages.length));
-    const stageText = stages[stageIdx];
-
-    const out = [];
-    renderAsciiHeaderToOut(out, `${C.bgVolt} ESTABLISHING TUNNEL ${C.reset}`, cols);
-
-    const fullTrack = `  [LOCAL PC] ${trackPattern} [CLOUD AI] ✦`;
-    out.push(`  ${C.cyanBold}${fullTrack}${C.reset}`);
-    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
-    out.push(`  ${C.voltBold}${spinner}${C.reset} ${C.whiteBold}CREATING CLOUDFLARE SECURE TUNNEL${C.reset}  ${C.voltBold}${String(pct).padStart(3, ' ')}%${C.reset}`);
-    out.push(`  [${bar}]`);
-    out.push(`  ${C.slate}● ${stageText}${C.reset}`);
-    out.push(`${C.voltBold}${thickBar}${C.reset}`);
-
-    const clamped = out.slice(0, rows - 1);
-    process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
-
+    drawFrame(`${C.bgVolt} ESTABLISHING TUNNEL ${C.reset}`,
+      `  ${C.voltBold}${spinner}${C.reset} ${C.whiteBold}CREATING CLOUDFLARE TUNNEL${C.reset}  ${C.voltBold}${String(pct).padStart(3, ' ')}%${C.reset}`, pct, null);
     frame++;
     await new Promise(r => setTimeout(r, 60));
   }
 
-  // Final confirmation frame
-  const finalUrl = getTunnelUrlFn() || 'https://trycloudflare.com';
-  const cols = getCols();
-  const rows = getRows();
-  const barWidth = Math.max(78, cols - 2);
-  const thickBar = '━'.repeat(barWidth);
-  const thinBar = '─'.repeat(barWidth);
-  const barLen = Math.min(76, Math.max(34, Math.floor(cols * 0.58)));
-
-  const out = [];
-  renderAsciiHeaderToOut(out, `${C.bgVolt} TUNNEL ACTIVE ${C.reset}`, cols);
-  out.push(`  ${C.cyanBold}  [LOCAL PC] ═════════════════════ ( ✦ ) ══════════════════════ [CLOUD AI] ✦${C.reset}`);
-  out.push(`${C.darkDivider}${thinBar}${C.reset}`);
-  out.push(`  ${C.voltBold}✓${C.reset} ${C.whiteBold}CLOUDFLARE TUNNEL CONNECTED${C.reset}  ${C.voltBold}100%${C.reset}`);
-  out.push(`  [${C.voltBold}${'█'.repeat(barLen)}${C.reset}]`);
-  out.push(`  ${C.voltBold}● MCP URL: ${C.cyanBold}${finalUrl}/mcp${C.reset} ${C.slate}(Copied to Clipboard!)${C.reset}`);
-  out.push(`${C.voltBold}${thickBar}${C.reset}`);
-
-  const clamped = out.slice(0, rows - 1);
-  process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
-
-  await new Promise(r => setTimeout(r, 400));
+  // Final frame: only claim success when a URL really exists.
+  const finalUrl = getTunnelUrlFn();
+  if (finalUrl) {
+    drawFrame(`${C.bgVolt} TUNNEL ACTIVE ${C.reset}`,
+      `  ${C.voltBold}✓${C.reset} ${C.whiteBold}CLOUDFLARE TUNNEL CONNECTED${C.reset}  ${C.voltBold}100%${C.reset}`, 100, `${finalUrl}/mcp`);
+  } else {
+    drawFrame(`${C.redBold} TUNNEL PENDING ${C.reset}`,
+      `  ${C.redBold}!${C.reset} ${C.whiteBold}Tunnel not ready yet — it keeps trying in the background.${C.reset}`, 92, null);
+  }
+  await new Promise(r => setTimeout(r, finalUrl ? 400 : 1500));
 }
 
 function selectDirectoryInteractive(startDir) {
@@ -724,22 +936,20 @@ function selectDirectoryInteractive(startDir) {
     let items = getItems();
 
     function renderNav() {
-      const cols = getCols();
       const rows = getRows();
-      const barWidth = Math.max(78, cols - 2);
+      const barWidth = getFrameWidth();
       const thickBar = '━'.repeat(barWidth);
       const thinBar = '─'.repeat(barWidth);
 
       const out = [];
+      renderAsciiHeaderToOut(out, `${C.bgVolt} DIRECTORY NAVIGATOR ${C.reset}`);
 
-      // 1. Header with full-width adaptive circuit
-      renderAsciiHeaderToOut(out, `${C.bgVolt} DIRECTORY NAVIGATOR ${C.reset}`, cols);
-
-      // 2. Current Folder row (with right-aligned counter)
-      const folderLeft = `  ${C.slate}Current Folder:${C.reset} ${C.voltBold}${currentDir}${C.reset}`;
-      const folderRight = `${C.steel}[${items.length} items]${C.reset}`;
-      const fSpaces = Math.max(2, barWidth - stripAnsi(folderLeft).length - stripAnsi(folderRight).length);
-      out.push(folderLeft + ' '.repeat(fSpaces) + folderRight);
+      // Current folder (middle-shortened to fit) with the item counter on the right.
+      const counter = `${C.steel}[${items.length} items]${C.reset}`;
+      const label = barWidth >= 50 ? 'Current Folder: ' : '';
+      const room = Math.max(8, barWidth - 2 - label.length - (barWidth >= 40 ? visibleWidth(counter) + 2 : 0));
+      const folderLeft = `  ${C.slate}${label}${C.reset}${C.voltBold}${middleEllipsis(currentDir, room)}${C.reset}`;
+      out.push(barWidth >= 40 ? spreadLine(folderLeft, counter, barWidth) : folderLeft);
       out.push(`${C.darkDivider}${thinBar}${C.reset}`);
 
       if (errorMessage) {
@@ -751,49 +961,50 @@ function selectDirectoryInteractive(startDir) {
       if (isTypingPath) {
         out.push('');
         out.push(`  ${C.voltBold}Type or Paste Directory Path:${C.reset}`);
-        out.push(`  > ${C.whiteBold}${typedPath}${C.reset}_`);
+        // Show the end of a long typed path so the cursor stays visible.
+        const maxTyped = Math.max(5, barWidth - 6);
+        const shown = typedPath.length > maxTyped ? '…' + typedPath.slice(-(maxTyped - 1)) : typedPath;
+        out.push(`  > ${C.whiteBold}${shown}${C.reset}_`);
         out.push('');
-        out.push(`  ${C.slate}[Enter] Confirm  |  [Esc] Back to Directory Browser${C.reset}`);
+        out.push(...flowItems([`${C.voltBold}[Enter]${C.reset} Confirm`, `${C.voltBold}[Esc]${C.reset} Back`], barWidth));
+        while (out.length < rows - 1) out.push('');
         out.push(`${C.voltBold}${thickBar}${C.reset}`);
       } else {
-        // Scrolling window of items adapted to available screen height
-        const fixedLines = out.length + 5; // lines so far + footer lines
-        const maxVisible = Math.max(4, rows - fixedLines);
+        const helpItems = [
+          `${C.voltBold}[↑/↓]${C.reset} ${C.white}Navigate${C.reset}`,
+          `${C.voltBold}[Enter]${C.reset} ${C.white}Open${C.reset}`,
+          `${C.voltBold}[Space]${C.reset} ${C.white}Select${C.reset}`,
+          `${C.voltBold}[T]${C.reset} ${C.white}Type Path${C.reset}`,
+          `${C.voltBold}[Backspace]${C.reset} ${C.white}Up${C.reset}`,
+          `${C.voltBold}[Esc]${C.reset} ${C.white}Cancel${C.reset}`,
+          `${C.voltBold}[${selectedIndex + 1}/${items.length}]${C.reset}`
+        ];
+        const helpLines = flowItems(helpItems, barWidth);
+        // Rows left for the list = window - header/folder - divider - help - bottom bar.
+        const maxVisible = Math.max(1, rows - out.length - helpLines.length - 2);
         let startIdx = 0;
-        if (selectedIndex >= maxVisible) {
-          startIdx = selectedIndex - maxVisible + 1;
-        }
+        if (selectedIndex >= maxVisible) startIdx = selectedIndex - maxVisible + 1;
         const visibleItems = items.slice(startIdx, startIdx + maxVisible);
-        const itemWidth = Math.max(40, barWidth - 6);
+        const itemWidth = Math.max(4, barWidth - 7);
 
         visibleItems.forEach((item, relIdx) => {
           const actualIdx = startIdx + relIdx;
-          const isSelected = actualIdx === selectedIndex;
-          if (isSelected) {
-            out.push(`  ${C.bgVolt} ► ${item.name.padEnd(itemWidth)} ${C.reset}`);
+          const name = middleEllipsis(item.name, itemWidth);
+          if (actualIdx === selectedIndex) {
+            out.push(`  ${C.bgVolt} ► ${name.padEnd(itemWidth)}${C.reset}`);
           } else {
             const color = item.type === 'select_current' ? C.voltBold : (item.type === 'parent' ? C.steel : C.white);
-            out.push(`    ${color}${item.name.padEnd(itemWidth)}${C.reset}`);
+            out.push(`     ${color}${name}${C.reset}`);
           }
         });
-
-        // Vertically fill down to footer so navigator frames the entire window
-        for (let i = visibleItems.length; i < maxVisible; i++) {
-          out.push('');
-        }
+        for (let i = visibleItems.length; i < maxVisible; i++) out.push('');
 
         out.push(`${C.darkDivider}${thinBar}${C.reset}`);
-        const navHelp = `${C.voltBold}[↑/↓]${C.reset} ${C.white}Navigate${C.reset}   ${C.voltBold}[Enter]${C.reset} ${C.white}Open Folder${C.reset}    ${C.voltBold}[Space]${C.reset} ${C.white}Select This Folder${C.reset}`;
-        const posIndicator = `${C.voltBold}[${selectedIndex + 1}/${items.length}]${C.reset}`;
-        const footerSpaces = Math.max(2, barWidth - stripAnsi(navHelp).length - stripAnsi(posIndicator).length);
-        out.push(`  ${navHelp}${' '.repeat(footerSpaces)}${posIndicator}`);
-        out.push(`  ${C.voltBold}[T]${C.reset}   ${C.white}Type Path${C.reset}  ${C.voltBold}[Backspace]${C.reset} ${C.white}Up${C.reset}         ${C.voltBold}[Esc]${C.reset} ${C.white}Cancel${C.reset}`);
+        out.push(...helpLines);
         out.push(`${C.voltBold}${thickBar}${C.reset}`);
       }
 
-      // In-place atomic redraw: cursor home (1,1) + clear + content (NO TRAILING NEWLINE!)
-      const clamped = out.slice(0, rows - 1);
-      process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
+      paintFrame(out);
     }
 
     renderNav();
@@ -899,107 +1110,184 @@ function selectDirectoryInteractive(startDir) {
   });
 }
 
-function renderDashboard() {
-  if (isNavigatingFolders || isEstablishingTunnel) return;
+// Wrap plain text into lines of at most `width` characters (breaks long words too).
+function wrapPlain(text, width, maxLines) {
+  const lines = [];
+  let rest = String(text);
+  while (rest.length > 0 && lines.length < maxLines) {
+    if (rest.length <= width) { lines.push(rest); rest = ''; break; }
+    let cut = rest.lastIndexOf(' ', width);
+    if (cut < width * 0.5) cut = width;
+    lines.push(rest.slice(0, cut));
+    rest = rest.slice(cut).replace(/^ /, '');
+  }
+  if (rest.length > 0 && lines.length) {
+    const last = lines[lines.length - 1];
+    lines[lines.length - 1] = last.slice(0, Math.max(0, width - 1)) + '…';
+  }
+  return lines;
+}
 
-  const cols = getCols();
+function renderDashboard() {
+  if (isNavigatingFolders || isEstablishingTunnel || isShuttingDown) return;
+
   const rows = getRows();
-  const barWidth = Math.max(78, cols - 2);
+  const barWidth = getFrameWidth();
   const thickBar = '━'.repeat(barWidth);
   const thinBar = '─'.repeat(barWidth);
+  const wide = barWidth >= 70;
+  const divider = `${C.darkDivider}${thinBar}${C.reset}`;
 
-  const out = [];
+  // Label column: highlighted badges on wide windows, plain short labels on narrow ones.
+  const label = (text) => wide
+    ? `  ${C.bgVolt} ${text.padEnd(7)} ${C.reset}  `
+    : `  ${C.voltBold}${text.slice(0, 7).padEnd(7)}${C.reset} `;
+  const labelWidth = visibleWidth(label('PROJECT'));
+  const valueWidth = Math.max(6, barWidth - labelWidth);
 
-  // 1. Full Bridge ASCII Emblem at top
-  renderAsciiHeaderToOut(out, `${C.voltBold}● STATUS: ONLINE${C.reset}`, cols);
+  // ---- Status badge reflects the real state of the server and tunnel ----
+  let badge;
+  if (serverStatus === 'failed') badge = `${C.redBold}● STATUS: SERVER DOWN${C.reset}`;
+  else if (serverStatus === 'restarting') badge = `${C.redBold}● STATUS: RESTARTING${C.reset}`;
+  else if (serverStatus !== 'online' || !mcpTunnelUrl || !tunnelAlive) badge = `${C.slate}● STATUS: CONNECTING${C.reset}`;
+  else badge = `${C.voltBold}● STATUS: ONLINE${C.reset}`;
 
-  // 2. Complete Live Screen Details
-  const maxPathLen = Math.max(30, barWidth - 16);
-  const displayProject = (activeProjectDir && activeProjectDir.length > maxPathLen)
-    ? '...' + activeProjectDir.slice(-(maxPathLen - 3))
-    : (activeProjectDir || '(None selected)');
+  const header = [];
+  renderAsciiHeaderToOut(header, badge);
 
-  out.push(`  ${C.bgVolt} PROJECT ${C.reset}   ${C.whiteBold}${displayProject}${C.reset}`);
-  out.push(`  ${C.bgVolt} JAILED ${C.reset}    ${C.voltBold}STRICTLY ENFORCED${C.reset} ${C.slate}(Zero access outside folder)${C.reset}`);
-  out.push(`  ${C.bgVolt} AUTH ${C.reset}      ${C.voltBold}BEARER PROTECTED${C.reset} ${C.slate}(Press [T] to copy token)${C.reset}`);
-  
+  // ---- Critical prompts: always shown right under the header, never clipped ----
+  const critical = [];
+  if (choosingMode) {
+    critical.push(`  ${C.voltBold}● APPROVAL MODE${C.reset} ${C.white}${wide ? 'How often should the AI ask before acting?' : 'Choose:'}${C.reset}`);
+    if (rows < 16) {
+      // Short window: options flow on one or two lines.
+      const opts = APPROVAL_MODES.map(m => `${C.voltBold}[${m.key}]${C.reset} ${m.id === approvalMode ? C.whiteBold + '►' : ''}${m.id === 'turbo' ? C.redBold : C.voltBold}${m.name}${C.reset}`);
+      critical.push(...flowItems(opts, barWidth, '  ', '  '));
+    } else for (const m of APPROVAL_MODES) {
+      const current = m.id === approvalMode;
+      const marker = current ? `${C.voltBold}►${C.reset}` : ' ';
+      const nameColor = m.id === 'turbo' ? C.redBold : C.voltBold;
+      const text = wide ? m.desc : m.short;
+      critical.push(`  ${marker} ${C.voltBold}[${m.key}]${C.reset} ${nameColor}${m.name.padEnd(7)}${C.reset} ${C.slate}${text}${current ? ' (current)' : ''}${C.reset}`);
+    }
+    critical.push(`    ${C.slate}[Esc] Cancel${C.reset}`);
+    critical.push(divider);
+  } else if (confirmingExit) {
+    critical.push(`  ${C.redBold}● STOP BRIDGE?${C.reset} ${C.white}${wide ? 'This closes the MCP server and the tunnel. Connected AI chats lose access.' : 'Closes server + tunnel.'}${C.reset}`);
+    critical.push(`    ${C.redBold}[Y]${C.reset} ${C.white}Yes, stop${C.reset}    ${C.voltBold}[N]${C.reset} ${C.white}No, keep running${C.reset}`);
+    critical.push(divider);
+  } else if (approvalQueue.length > 0) {
+    const req = approvalQueue[0];
+    const more = approvalQueue.length > 1 ? ` ${C.slate}(+${approvalQueue.length - 1} waiting)${C.reset}` : '';
+    critical.push(`  ${C.redBold}● PERMISSION NEEDED${C.reset} ${C.whiteBold}${req.action}${C.reset}${more}`);
+    // Show the whole command (wrapped), so the user can judge exactly what will run.
+    wrapPlain(req.detail, Math.max(6, barWidth - 4), 6).forEach(l => critical.push(`    ${C.cyanBold}${l}${C.reset}`));
+    if (req.reason) wrapPlain(`Reason: it ${req.reason}`, Math.max(6, barWidth - 4), 2).forEach(l => critical.push(`    ${C.slate}${l}${C.reset}`));
+    const left = Math.max(0, 90 - Math.floor((Date.now() - req.receivedAt) / 1000));
+    critical.push(`    ${C.voltBold}[Y]${C.reset} ${C.white}Allow${C.reset}    ${C.redBold}[N]${C.reset} ${C.white}Deny${C.reset}    ${C.slate}(auto-deny in ${left}s)${C.reset}`);
+    critical.push(divider);
+  }
+
+  // ---- Status lines (listed by priority; low-priority lines drop first on short windows) ----
+  const info = [];
+  const project = activeProjectDir ? middleEllipsis(activeProjectDir, valueWidth) : '(None selected)';
+  info.push({ p: 1, line: `${label('PROJECT')}${C.whiteBold}${project}${C.reset}` });
   if (mcpTunnelUrl) {
-    out.push(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.cyanBold}${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}${C.reset}`);
+    const shown = `${mcpTunnelUrl}/mcp?token=${maskToken(bridgeAuthToken)}`;
+    info.push({ p: 1, line: `${label('MCP URL')}${C.cyanBold}${middleEllipsis(shown, valueWidth)}${C.reset}` });
   } else {
-    out.push(`  ${C.bgVolt} MCP URL ${C.reset}   ${C.slate}Establishing secure tunnel...${C.reset}`);
+    info.push({ p: 1, line: `${label('MCP URL')}${C.slate}Establishing secure tunnel...${C.reset}` });
   }
-
+  const serverText = serverStatus === 'online' ? `${C.voltBold}RUNNING${C.reset} ${C.slate}on 127.0.0.1:${bridgePort}${C.reset}`
+    : serverStatus === 'failed' ? `${C.redBold}DOWN${C.reset} ${C.slate}(press [L] for logs)${C.reset}`
+    : `${C.slate}${serverStatus.toUpperCase()}...${C.reset}`;
+  info.push({ p: 2, line: `${label('SERVER')}${serverText}` });
+  const mode = modeInfo(approvalMode);
+  info.push({ p: 1, line: `${label('MODE')}${mode.id === 'turbo' ? C.redBold : C.voltBold}${mode.name}${C.reset} ${C.slate}(${wide ? mode.desc : mode.short} • [M] change)${C.reset}` });
+  info.push({ p: 3, line: `${label('SAFETY')}${C.voltBold}SANDBOXED${C.reset} ${C.slate}${wide ? '(files jailed to project • harmful commands always blocked)' : '(harmful cmds blocked)'}${C.reset}` });
+  info.push({ p: 4, line: `${label('AUTH')}${C.voltBold}BEARER TOKEN${C.reset} ${C.slate}${wide ? '(saved; [T] copy • \`bridge rotate-token\` to replace)' : '([T] copy)'}${C.reset}` });
   if (updateAvailable) {
-    out.push(`  ${C.bgVolt} UPDATE ${C.reset}   ${C.voltBold}v${updateAvailable} available!${C.reset} ${C.white}Run: npm install -g @markmayandi/bridge@latest${C.reset}`);
+    info.push({ p: 5, line: `${label('UPDATE')}${C.voltBold}v${updateAvailable} available${C.reset} ${C.white}npm i -g @markmayandi/bridge@latest${C.reset}` });
   }
 
-  out.push(`${C.darkDivider}${thinBar}${C.reset}`);
-
+  // Flash messages wrap (up to 3 lines) instead of being cut, so a URL shown for manual copy stays whole.
+  let flash = [];
   if (flashNotification) {
-    out.push(`  ${flashNotification}`);
-    out.push(`${C.darkDivider}${thinBar}${C.reset}`);
+    const flashText = `  ${String(flashNotification).replace(/^\s+/, '')}`;
+    flash = visibleWidth(flashText) <= barWidth
+      ? [flashText]
+      : wrapPlain(stripAnsi(flashText).trim(), Math.max(6, barWidth - 2), 3).map(l => `  ${C.white}${l}${C.reset}`);
+    flash.push(divider);
   }
 
-  // Keyboard Shortcuts
-  out.push(`  ${C.voltBold}KEYBOARD ACTIONS:${C.reset}`);
-  out.push(`  ${C.voltBold}[C]${C.reset} ${C.white}Copy MCP URL${C.reset}    ${C.voltBold}[T]${C.reset} ${C.white}Copy Token${C.reset}    ${C.voltBold}[D]${C.reset} ${C.white}Switch Folder${C.reset}    ${C.voltBold}[L]${C.reset} ${C.white}Logs (${showLiveLogs ? C.voltBold + 'ON' : C.slate + 'OFF'}${C.white})${C.reset}    ${C.voltBold}[Q]${C.reset} ${C.white}Exit${C.reset}`);
+  const keyItems = [
+    `${C.voltBold}[C]${C.reset} ${C.white}Copy MCP URL${C.reset}`,
+    `${C.voltBold}[T]${C.reset} ${C.white}Copy Token${C.reset}`,
+    `${C.voltBold}[D]${C.reset} ${C.white}Switch Folder${C.reset}`,
+    `${C.voltBold}[L]${C.reset} ${C.white}Logs ${showLiveLogs ? C.voltBold + 'ON' : C.slate + 'OFF'}${C.reset}`,
+    `${C.voltBold}[M]${C.reset} ${C.white}Mode ${modeInfo(approvalMode).name}${C.reset}`,
+    `${C.voltBold}[Q]${C.reset} ${C.white}Exit${C.reset}`
+  ];
+  const keys = flowItems(keyItems, barWidth, '  ', wide ? '    ' : '  ');
 
-  out.push(`${C.voltBold}${thickBar}${C.reset}`);
+  const compat = barWidth >= 126
+    ? `  ${C.voltBold}COMPATIBILITY:${C.reset} ${C.whiteBold}Supports every chat-based LLM that provides custom MCP connectors${C.reset} ${C.slate}(Gemini, Claude, ChatGPT, DeepSeek, etc.)${C.reset}`
+    : barWidth >= 96
+      ? `  ${C.voltBold}COMPATIBILITY:${C.reset} ${C.whiteBold}Every chat-based LLM with custom MCP${C.reset} ${C.slate}• Gemini • Claude • ChatGPT • DeepSeek${C.reset}`
+      : `  ${C.voltBold}WORKS WITH:${C.reset} ${C.whiteBold}any chat LLM with custom MCP${C.reset}`;
 
-  // 4. Middle Dynamic Section: Live logs or Quick-Connect guide filling the screen
-  // Reserved for bottom: 2 lines (thickBar + compatibility footer)
-  const targetTotal = rows - 1;
-  const availableLines = Math.max(0, targetTotal - out.length - 2);
+  // ---- Fit everything to the window height ----
+  // Fixed parts: header + critical + info + divider + flash + keys + bar, plus optional footer (bar + compat).
+  let footer = [`${C.voltBold}${thickBar}${C.reset}`, compat];
+  let infoLines = info.slice();
+  let infoDivider = [divider];
+  let keyBar = [`${C.voltBold}${thickBar}${C.reset}`];
+  const used = () => header.length + critical.length + infoLines.length + infoDivider.length + flash.length + keys.length + keyBar.length + footer.length;
+  // Drop the least important parts first; the prompt and the key help always survive.
+  if (used() > rows) footer = [];
+  while (used() > rows && infoLines.length > 1) {
+    const worst = infoLines.reduce((acc, it, i) => (it.p >= infoLines[acc].p ? i : acc), 0);
+    infoLines.splice(worst, 1);
+  }
+  if (used() > rows && flash.length) flash = [];
+  if (used() > rows) keyBar = [];
+  if (used() > rows && header.length > 1) header.splice(0, header.length, header[1]); // keep only the brand line
+  if (used() > rows && (critical.length || confirmingExit || choosingMode)) { infoLines = []; infoDivider = []; }
+  if (used() > rows && critical.length) {
+    // One-line key help so the prompt's own keys stay visible.
+    keys.splice(0, keys.length, `  ${C.voltBold}[Q]${C.reset} Exit`);
+  }
+  if (used() > rows && critical.length) critical.pop(); // trailing divider
+  // Tiny window with a command prompt: shorten the wrapped command, keep the title and the [Y]/[N] line.
+  // (The mode picker's option lines are never removed.)
+  while (used() > rows && !choosingMode && critical.length > 2) critical.splice(critical.length - 2, 1);
 
-  if (showLiveLogs) {
-    out.push(`  ${C.voltBold}LIVE HARNESS TRAFFIC & ACTIVITY LOGS:${C.reset}`);
-    const logSlots = Math.max(1, availableLines - 1);
-    const logsToShow = recentLogs.slice(-logSlots);
-    if (logsToShow.length === 0) {
-      out.push(`  ${C.slate}(Waiting for AI requests from Gemini, Claude, or ChatGPT...)${C.reset}`);
-      for (let i = 1; i < logSlots; i++) out.push('');
-    } else {
+  const out = [...header, ...critical, ...infoLines.map(i => i.line), ...infoDivider, ...flash, ...keys, ...keyBar];
+  const middle = Math.max(0, rows - out.length - footer.length);
+
+  if (middle > 0) {
+    if (showLiveLogs) {
+      out.push(`  ${C.voltBold}LIVE HARNESS TRAFFIC & ACTIVITY LOGS:${C.reset}`);
+      const slots = middle - 1;
+      const logsToShow = slots > 0 ? recentLogs.slice(-slots) : [];
+      if (slots > 0 && logsToShow.length === 0) out.push(`  ${C.slate}(Waiting for AI requests...)${C.reset}`);
       logsToShow.forEach(log => out.push(`  ${log}`));
-      for (let i = logsToShow.length; i < logSlots; i++) out.push('');
-    }
-  } else {
-    // Universal LLM support statement filling vertical space down to pinned footer
-    if (availableLines >= 4) {
+    } else if (middle >= 3) {
       out.push(`  ${C.voltBold}UNIVERSAL AI MCP HARNESS:${C.reset}`);
-      if (barWidth >= 95) {
-        out.push(`  ${C.steel}●${C.reset} ${C.whiteBold}Built for every chat-based LLM that provides custom MCP connectors.${C.reset}`);
-        out.push(`  ${C.steel}●${C.reset} ${C.slate}Copy your MCP URL above ([C]) and paste it into your AI model's custom MCP tools.${C.reset}`);
-      } else {
-        out.push(`  ${C.steel}●${C.reset} ${C.whiteBold}Built for every chat LLM with custom MCP support.${C.reset}`);
-        out.push(`  ${C.steel}●${C.reset} ${C.slate}Copy MCP URL ([C]) and connect in your model's tools.${C.reset}`);
-      }
-      
-      const padCount = availableLines - 3;
-      for (let i = 0; i < padCount; i++) {
-        out.push('');
-      }
-    } else {
-      for (let i = 0; i < availableLines; i++) {
-        out.push('');
-      }
+      out.push(`  ${C.steel}●${C.reset} ${C.whiteBold}${wide ? 'Built for every chat-based LLM that provides custom MCP connectors.' : 'For any chat LLM with custom MCP.'}${C.reset}`);
+      out.push(`  ${C.steel}●${C.reset} ${C.slate}${wide ? "Copy your MCP URL ([C]) and paste it into your AI model's custom MCP tools." : 'Copy URL with [C], paste in your AI.'}${C.reset}`);
     }
+    while (out.length < rows - footer.length) out.push('');
   }
+  out.push(...footer);
 
-  // 5. Pinned Bottom Frame
-  out.push(`${C.voltBold}${thickBar}${C.reset}`);
-
-  // 6. Pinned Compatibility Line (strictly bounded to barWidth)
-  if (barWidth >= 126) {
-    out.push(`  ${C.voltBold}COMPATIBILITY:${C.reset} ${C.whiteBold}Supports every chat-based LLM that provides custom MCP connectors${C.reset} ${C.slate}(Gemini, Claude, ChatGPT, DeepSeek, etc.)${C.reset}`);
-  } else if (barWidth >= 96) {
-    out.push(`  ${C.voltBold}COMPATIBILITY:${C.reset} ${C.whiteBold}Every chat-based LLM with custom MCP${C.reset} ${C.slate}• Gemini • Claude • ChatGPT • DeepSeek${C.reset}`);
-  } else {
-    out.push(`  ${C.voltBold}COMPATIBILITY:${C.reset} ${C.whiteBold}Supports every chat-based LLM with custom MCP${C.reset}`);
-  }
-
-  const clamped = out.slice(0, rows - 1);
-  process.stdout.write('\x1b[2J\x1b[H' + clamped.join('\n'));
+  paintFrame(out);
 }
+
+// Keep the approval countdown live while a prompt is open.
+setInterval(() => {
+  if (approvalQueue.length > 0 && !isNavigatingFolders && !isEstablishingTunnel) renderDashboard();
+}, 1000).unref();
 
 async function startBridge() {
   // Check for updates in background (non-blocking)
@@ -1031,29 +1319,27 @@ async function startBridge() {
     }
   }
 
-  // Step 3: Free Port 3000
-  freePort(3000);
+  // Step 3: Pick the port (only a stale Bridge server is ever stopped to free it)
+  const useNamedTunnel = Boolean(bridgeConfig.tunnelToken);
+  const port = choosePort(useNamedTunnel);
+  if (!port) {
+    process.stdout.write('\x1b[?1049l\x1b[?25h');
+    const owners = getPortOwners(3000).map(o => `PID ${o.pid}: ${o.cmd || '(unknown)'}`).join('\n    ');
+    console.error('\n' + C.redBold + '● [PORT BUSY] ' + C.reset + 'Port 3000 is used by another program, and Bridge will not stop it:');
+    console.error('    ' + owners);
+    console.error(C.slate + (useNamedTunnel
+      ? 'Your named tunnel points to localhost:3000. Stop that program, then start Bridge again.'
+      : 'No free port found between 3000 and 3020.') + C.reset + '\n');
+    process.exit(1);
+  }
+  bridgePort = port;
 
-  // Step 4: Start MCP Server in background
-  serverProcess = spawn('node', [serverScript, activeProjectDir, '--http', '3000', '--token', bridgeAuthToken], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true
-  });
-
-  serverProcess.stderr.on('data', (chunk) => {
-    const text = chunk.toString();
-    const lines = text.split('\n').filter(l => l.trim());
-    lines.forEach(l => {
-      recentLogs.push(`${C.slate}[${new Date().toLocaleTimeString()}]${C.reset} ${l}`);
-      if (recentLogs.length > 50) recentLogs.shift();
-    });
-    if (showLiveLogs && !isNavigatingFolders && !isEstablishingTunnel) renderDashboard();
-  });
+  // Step 4: Start MCP Server in background (supervised: restarted automatically if it crashes)
+  startServerProcess();
 
   // Step 5: Start Cloudflare Tunnel (token mode uses a fixed public URL)
   isEstablishingTunnel = true;
   const activeCloudflaredBin = await ensureCloudflaredBinary();
-  const useNamedTunnel = Boolean(bridgeConfig.tunnelToken);
 
   // Do not let an unrelated TUNNEL_TOKEN from the machine leak into Bridge's
   // tunnel. Bridge uses only the token saved by `bridge setup`.
@@ -1072,12 +1358,14 @@ async function startBridge() {
     copyToClipboard(`${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}`);
     setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Authenticated fixed MCP URL loaded into your clipboard! (Ctrl + V to paste)${C.reset}`);
   } else {
-    tunnelProcess = spawn(activeCloudflaredBin, ['tunnel', '--no-autoupdate', '--url', 'http://localhost:3000'], {
+    tunnelProcess = spawn(activeCloudflaredBin, ['tunnel', '--no-autoupdate', '--url', `http://localhost:${bridgePort}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       env: tunnelEnv
     });
   }
+
+  tunnelAlive = true;
 
   const extractUrl = (text) => {
     const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
@@ -1110,8 +1398,12 @@ async function startBridge() {
   });
 
   tunnelProcess.on('exit', (code, signal) => {
+    tunnelAlive = false;
+    if (isShuttingDown) return;
     if (code !== 0 && !isNavigatingFolders) {
       setFlash(`  ${C.redBold}● [TUNNEL]${C.reset} ${C.white}cloudflared exited (${code ?? signal}). Check the token and public hostname.${C.reset}`, 8000);
+    } else {
+      renderDashboard();
     }
   });
 
@@ -1136,21 +1428,64 @@ async function startBridge() {
 
       const keyName = (key.name || str || '').toLowerCase();
 
+      // Exit confirmation: Q (or Ctrl+C) asks first; Y stops the server, N/Esc cancels.
+      // A second Ctrl+C while asking exits immediately (emergency stop).
+      if (confirmingExit) {
+        if (keyName === 'y' || (key.ctrl && key.name === 'c')) {
+          cleanupAndExit();
+        } else if (keyName === 'n' || key.name === 'escape' || keyName === 'q') {
+          confirmingExit = false;
+          setFlash(`  ${C.voltBold}● [CANCELLED]${C.reset} ${C.white}Bridge keeps running.${C.reset}`, 2500);
+        }
+        return;
+      }
+
+      // Mode picker: 1-4 choose, Esc/M cancels.
+      if (choosingMode) {
+        const picked = APPROVAL_MODES.find(m => m.key === keyName || m.key === str);
+        if (picked) {
+          choosingMode = false;
+          setApprovalMode(picked.id);
+        } else if (key.name === 'escape' || keyName === 'm') {
+          choosingMode = false;
+          renderDashboard();
+        } else if ((key.ctrl && key.name === 'c') || keyName === 'q') {
+          choosingMode = false;
+          confirmingExit = true;
+          renderDashboard();
+        }
+        return;
+      }
+
       if ((key.ctrl && key.name === 'c') || keyName === 'q') {
-        cleanupAndExit();
+        confirmingExit = true;
+        renderDashboard();
+        return;
+      }
+
+      if (approvalQueue.length > 0 && (keyName === 'y' || keyName === 'n')) {
+        answerApproval(keyName === 'y');
         return;
       }
 
       if (keyName === 'c') {
         if (mcpTunnelUrl) {
-          copyToClipboard(`${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}`);
-          setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Authenticated MCP URL copied to clipboard: ${C.cyanBold}${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}${C.reset}`);
+          const fullUrl = `${mcpTunnelUrl}/mcp?token=${bridgeAuthToken}`;
+          if (copyToClipboard(fullUrl)) {
+            setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Authenticated MCP URL copied to clipboard (token ${maskToken(bridgeAuthToken)}).${C.reset}`);
+          } else {
+            // No clipboard tool available: show the full URL once so it can be copied by hand.
+            setFlash(`  ${C.redBold}● [NO CLIPBOARD]${C.reset} ${C.white}Copy manually: ${C.cyanBold}${fullUrl}${C.reset}`, 15000);
+          }
         } else {
           setFlash(`  ${C.slate}● [WAIT]${C.reset} ${C.white}Tunnel is still establishing... please wait.${C.reset}`);
         }
       } else if (keyName === 't') {
-        copyToClipboard(bridgeAuthToken);
-        setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Bearer auth token copied to clipboard! (Bearer ${bridgeAuthToken.slice(0, 8)}...)${C.reset}`);
+        if (copyToClipboard(bridgeAuthToken)) {
+          setFlash(`  ${C.voltBold}● [COPIED]${C.reset} ${C.white}Bearer auth token copied to clipboard (${maskToken(bridgeAuthToken)}).${C.reset}`);
+        } else {
+          setFlash(`  ${C.redBold}● [NO CLIPBOARD]${C.reset} ${C.white}Token: ${bridgeAuthToken}${C.reset}`, 15000);
+        }
       } else if (keyName === 'd') {
         // Launch In-CLI Directory Navigator
         const picked = await selectDirectoryInteractive(activeProjectDir);
@@ -1160,6 +1495,9 @@ async function startBridge() {
         renderDashboard();
       } else if (keyName === 'l') {
         showLiveLogs = !showLiveLogs;
+        renderDashboard();
+      } else if (keyName === 'm') {
+        choosingMode = true;
         renderDashboard();
       }
     } catch (err) {
@@ -1171,16 +1509,31 @@ async function startBridge() {
   renderDashboard();
 }
 
+// Kill a child and everything it started (the server's background jobs, cloudflared children).
+function killTree(child) {
+  if (!child || child.exitCode !== null || !child.pid) return;
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+    } else {
+      child.kill('SIGTERM');
+    }
+  } catch (e) {
+    try { child.kill(); } catch (err) {}
+  }
+}
+
 function cleanupAndExit() {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
   process.stdout.write('\x1b[?1049l\x1b[?25h');
   process.stdout.write('\n\n' + C.voltBold + 'Stopping Bridge and releasing ports...' + C.reset + '\n');
   if (serverProcess) {
-    try { serverProcess.kill(); } catch (e) {}
+    // Ask the server to stop its background jobs, then make sure the whole tree is gone.
+    try { serverProcess.send({ type: 'shutdown' }); } catch (e) {}
+    killTree(serverProcess);
   }
-  if (tunnelProcess) {
-    try { tunnelProcess.kill(); } catch (e) {}
-  }
-  freePort(3000);
+  killTree(tunnelProcess);
   console.log(C.voltBold + '● [STOPPED] Bridge stopped cleanly. Goodbye!\n' + C.reset);
   process.exit(0);
 }
@@ -1198,7 +1551,12 @@ process.on('unhandledRejection', (reason) => {
   console.error('\n' + C.redBold + '● [UNHANDLED REJECTION] ' + C.reset + reason);
 });
 
-if (subcommand === 'setup') {
+if (subcommand === 'rotate-token') {
+  const fresh = crypto.randomBytes(24).toString('hex');
+  writeBridgeConfig({ authToken: fresh });
+  console.log('\n' + C.voltBold + '● [ROTATED] ' + C.reset + 'New Bridge auth token saved. Restart Bridge and paste the new MCP URL ([C]) into every AI connector.\n');
+  process.exit(0);
+} else if (subcommand === 'setup') {
   runSetup().catch((err) => {
     console.error('\n' + C.redBold + '● [SETUP ERROR] ' + C.reset + err.message);
     process.exit(1);

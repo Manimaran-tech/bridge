@@ -20,6 +20,7 @@ const path = require('path');
 const readline = require('readline');
 const http = require('http');
 const crypto = require('crypto');
+const os = require('os');
 const { exec, spawn, execSync } = require('child_process');
 
 // ==========================================
@@ -35,6 +36,7 @@ let httpPort = null;
 let authToken = process.env.BRIDGE_TOKEN || process.env.BRIDGE_AUTH_TOKEN || null;
 let noAuth = false;
 let disableShell = false;
+let approvalModeFromCli = null;
 let currentPlan = []; // dsh-plan-mode
 const fileBackups = new Map(); // dsh-atomic-write: path -> [previous_contents]
 const backgroundJobs = new Map(); // dsh-tool-jobs: jobId -> { proc, cmd, startTime, logs }
@@ -52,6 +54,10 @@ for (let i = 0; i < args.length; i++) {
     authToken = args[++i] || null;
   } else if (arg === '--no-auth') {
     noAuth = true;
+  } else if (arg.startsWith('--approval-mode=')) {
+    approvalModeFromCli = arg.split('=')[1];
+  } else if (arg === '--approval-mode') {
+    approvalModeFromCli = args[++i];
   } else if (arg === '--disable-shell') {
     disableShell = true;
   } else if (!arg.startsWith('-') && !rootDir) {
@@ -99,15 +105,297 @@ const SENSITIVE_PATTERNS = [
   /credentials\.json$/i
 ];
 
+// ==========================================
+// Command Safety Policy
+// ==========================================
+// Every shell command (execute_command, bash, pwsh, background jobs) is classified:
+//   block   -> refused outright (system damage, disk wipes, privilege/security changes,
+//              remote code piping, hidden/encoded payloads)
+//   confirm -> deletes / irreversible discards; waits for the human to press Y in the
+//              Bridge dashboard (denied automatically if nobody answers)
+//   allow   -> runs immediately (builds, tests, git, installs, scripts...)
+// This is a best-effort guard against model mistakes, not an OS sandbox: a model can
+// still write a script file and run it. Keep the project folder under git.
+
+// Matches the start of a command segment (start of string, or after ; & | && || ( or a newline).
+const SEG = String.raw`(?:^|[;&|(\n]\s*|\$\(\s*)`;
+
 const BLOCKED_COMMANDS = [
-  /\bformat\b/i,
-  /\brm\s+(-rf?|--recursive)\s+[\/\\]/i,
-  /\bdel\s+\/[sfq]\s+[c-z]:\\/i,
-  /\bshutdown\b/i,
-  /\bmkfs\b/i,
-  /\bdd\s+if=/i,
-  /\bfdisk\b/i
+  { re: new RegExp(SEG + String.raw`format(\.com)?\s+[a-z]:`, 'i'), why: 'formats a disk' },
+  { re: /\bformat-volume\b|\bclear-disk\b|\binitialize-disk\b|\bremove-partition\b/i, why: 'modifies disks/partitions' },
+  { re: new RegExp(SEG + String.raw`(diskpart|fdisk|mkfs(\.\w+)?|parted|wipefs)\b`, 'i'), why: 'modifies disks/partitions' },
+  { re: /\bdd\s+[^|;&]*\bof=\/dev\//i, why: 'writes raw to a device' },
+  { re: new RegExp(SEG + String.raw`(sudo\s+)?(shutdown|reboot|halt|poweroff)\b`, 'i'), why: 'shuts down or restarts the machine' },
+  { re: /\b(restart|stop)-computer\b/i, why: 'shuts down or restarts the machine' },
+  { re: new RegExp(SEG + String.raw`(sudo|su|runas|doas)\b`, 'i'), why: 'elevates privileges' },
+  { re: /-verb\s+runas\b/i, why: 'elevates privileges' },
+  { re: new RegExp(SEG + String.raw`(reg(\.exe)?\s+(add|delete|import|load|restore)|regedit)\b`, 'i'), why: 'edits the Windows registry' },
+  { re: /\b(new|set|remove)-itemproperty\b[^|;&]*\bHK(LM|CU|CR|U)\b|\bHK(LM|CU):\\/i, why: 'edits the Windows registry' },
+  { re: new RegExp(SEG + String.raw`(bcdedit|bootrec|vssadmin|wbadmin|cipher\s+\/w|takeown|icacls|cacls|attrib\s+[^|;&]*[+-][shr]\s+[a-z]:\\)`, 'i'), why: 'changes boot, backup, ownership or system file settings' },
+  { re: new RegExp(SEG + String.raw`(net\s+(user|localgroup)|net1\s+user)\b`, 'i'), why: 'manages user accounts' },
+  { re: /\b(set-mppreference|add-mppreference|disable-windowsoptionalfeature|set-executionpolicy|netsh\s+(advfirewall|firewall))\b/i, why: 'changes security settings' },
+  { re: new RegExp(SEG + String.raw`(schtasks\s+\/create|crontab\s+-[er]?)\b`, 'i'), why: 'creates persistent scheduled tasks' },
+  { re: /\b(sc(\.exe)?\s+(create|delete|config)|new-service|remove-service)\b/i, why: 'manages system services' },
+  { re: /\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*(sh|bash|zsh|python\d*|node|iex|invoke-expression|pwsh|powershell)\b/i, why: 'pipes downloaded code into a shell' },
+  { re: /\b(iex|invoke-expression)\b[^\n]*\b(downloadstring|iwr|irm|invoke-webrequest|invoke-restmethod|net\.webclient)\b/i, why: 'runs downloaded code' },
+  { re: /\b(powershell|pwsh)(\.exe)?\b[^\n]*\s-(e|ec|enc|encodedcommand)\s+[a-z0-9+\/=]{8,}/i, why: 'runs a hidden (encoded) PowerShell payload' },
+  { re: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, why: 'fork bomb' },
+  { re: /\bchmod\s+(-R\s+)?[0-7]*777\s+\/(\s|$)/i, why: 'opens permissions on the filesystem root' },
+  { re: /[a-z]:\\(windows|program files( \(x86\))?|programdata)\\?/i, why: 'touches Windows system folders', onlyIfMutating: true },
+  { re: /(^|\s)\/(etc|bin|sbin|usr|boot|sys|proc|var|lib)(\/|\s|$)/i, why: 'touches system folders', onlyIfMutating: true }
 ];
+
+// Deleting files, or discarding work in a way git cannot undo -> ask the human.
+const DELETE_COMMANDS = [
+  { kind: 'delete-shell', re: new RegExp(SEG + String.raw`(rm|rmdir|rd|del|erase|unlink|shred|ri)\b`, 'i'), why: 'deletes files or folders' },
+  { kind: 'delete-shell', re: /\b(remove-item|clear-content|clear-item)\b/i, why: 'deletes files or folders' },
+  { kind: 'delete-other', re: /\bfind\b[^|;&]*\s-(delete|exec\s+rm)\b/i, why: 'deletes files found by find' },
+  { kind: 'git-destructive', re: /\bgit\s+(rm\b|clean\b|reset\s+[^|;&]*--hard|checkout\s+[^|;&]*--\s|restore\b|stash\s+(drop|clear)\b|branch\s+[^|;&]*-D\b|push\s+[^|;&]*(--force|-f\b|--delete|:))/i, why: 'discards git work or deletes branches' },
+  { kind: 'delete-other', re: /\b(rmtree|os\.remove|os\.unlink|os\.rmdir|shutil\.rmtree|rimraf|del-cli)\b|\.(rmSync|rmdirSync|unlinkSync|rm|rmdir|unlink)\s*\(/i, why: 'deletes files from an inline script' },
+  // Secrets: file tools refuse these names, so shell access to them needs the user's OK too.
+  { kind: 'secret', re: /(^|[\s"'\\/=:])\.env(\.[\w.-]+)?(\s|["']|$)|\bid_(rsa|ed25519|ecdsa|dsa)\b|(^|[\s"'\\/])[\w.-]+\.(pem|key|pfx|p12)(\s|["']|$)|\bcredentials\.json\b|\.ssh[\\/]|\.aws[\\/]credentials|\.npmrc\b|\.git-credentials\b/i, why: 'reads or touches a secrets/credentials file' },
+  { kind: 'secret', re: /\b(printenv|Get-ChildItem\s+env:|gci\s+env:|ls\s+env:|dir\s+env:)|^\s*(set|env)\s*$/i, why: 'prints all environment variables (may contain secrets)' }
+];
+
+const MUTATING_HINT = /\b(rm|del|erase|rd|rmdir|remove-item|move|move-item|mv|copy|copy-item|cp|xcopy|robocopy|set-content|add-content|out-file|new-item|ren|rename|rename-item|mkdir|md|icacls|attrib|takeown|chmod|chown|tee)\b|>/i;
+
+function classifyCommand(cmd) {
+  const normalized = String(cmd).replace(/\^/g, ''); // strip cmd.exe caret escapes (r^m -> rm)
+  const mutating = MUTATING_HINT.test(normalized);
+  for (const rule of BLOCKED_COMMANDS) {
+    if (rule.onlyIfMutating && !mutating) continue;
+    if (rule.re.test(normalized)) return { level: 'block', reason: rule.why };
+  }
+  // Collect every sensitive category the command touches (a command can delete AND read secrets).
+  const hits = DELETE_COMMANDS.filter(rule => rule.re.test(normalized));
+  if (hits.length) {
+    return { level: 'confirm', reason: hits[0].why, kinds: [...new Set(hits.map(h => h.kind))] };
+  }
+  return { level: 'allow', reason: null, kinds: [] };
+}
+
+// ==========================================
+// Approval Modes (chosen by the user in the Bridge dashboard)
+// ==========================================
+//   turbo   - never asks. Harmful commands are still blocked.
+//   review  - asks before EVERY change: writes, edits, commands, jobs, deletes, folder switches.
+//   default - asks for deletes, destructive git, secret files and new project folders.
+//   auto    - Bridge decides by risk: asks only for things it cannot undo. delete_file is
+//             recoverable (Bridge trash), and deleting build/cache folders is allowed;
+//             shell deletes of other files, destructive git, secrets and new folders still ask.
+const APPROVAL_MODES = ['turbo', 'review', 'default', 'auto'];
+let approvalMode = APPROVAL_MODES.includes(approvalModeFromCli) ? approvalModeFromCli : 'default';
+
+// Folders/files that build tools recreate, so deleting them loses nothing.
+const REGENERABLE_NAMES = new Set([
+  'node_modules', 'dist', 'build', 'out', 'coverage', '.cache', '.parcel-cache', '.turbo', '.next', '.nuxt',
+  '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.tox', 'target', 'bin', 'obj', '.gradle',
+  'tmp', 'temp', '.nyc_output', '.svelte-kit', '.angular', '.expo', 'logs'
+]);
+const REGENERABLE_PATTERNS = [/\.pyc$/i, /\.pyo$/i, /\.log$/i, /\.tsbuildinfo$/i, /^\*\.(pyc|log|tmp)$/i];
+
+// True when every target of every plain delete (rm/del/rmdir/Remove-Item) in the command is a
+// project-relative build/cache path. Anything else (absolute paths, "..", source files) is not.
+function isRegenerableDelete(cmd) {
+  const segments = String(cmd).replace(/\^/g, '').split(/&&|\|\||[;&|\n]/);
+  let sawDelete = false;
+  for (const seg of segments) {
+    const words = seg.trim().match(/"[^"]*"|'[^']*'|\S+/g) || [];
+    if (!words.length) continue;
+    const verb = words[0].toLowerCase();
+    if (!['rm', 'rmdir', 'rd', 'del', 'erase', 'remove-item', 'ri'].includes(verb)) continue;
+    sawDelete = true;
+    const targets = words.slice(1)
+      .filter(w => !/^-/.test(w) && !/^\/[a-z]$/i.test(w)) // flags: -rf, -Recurse, /s /q
+      .map(w => w.replace(/^["']|["']$/g, ''));
+    if (targets.length === 0) return false;
+    for (const t of targets) {
+      if (path.isAbsolute(t) || /^[a-z]:/i.test(t) || t.split(/[\\/]/).includes('..') || t.startsWith('~')) return false;
+      const parts = t.split(/[\\/]/).filter(p => p && p !== '.');
+      const last = parts[parts.length - 1] || '';
+      const ok = parts.some(p => REGENERABLE_NAMES.has(p.toLowerCase())) || REGENERABLE_PATTERNS.some(re => re.test(last));
+      if (!ok) return false;
+    }
+  }
+  return sawDelete;
+}
+
+// One decision point for every action that may need the user.
+//   kind: write | command | job | delete-tool | delete-shell | delete-other | git-destructive | secret | folder-switch
+function needsApproval(kind, meta = {}) {
+  switch (approvalMode) {
+    case 'turbo':
+      return false;
+    case 'review':
+      return true;
+    case 'auto':
+      if (kind === 'write' || kind === 'command' || kind === 'job') return false;
+      if (kind === 'delete-tool') return false; // goes to the Bridge trash, recoverable
+      if (kind === 'delete-shell') return !meta.regenerable;
+      return true; // delete-other, git-destructive, secret, folder-switch
+    case 'default':
+    default:
+      return !(kind === 'write' || kind === 'command' || kind === 'job');
+  }
+}
+
+async function gate(ctx, kind, action, detail, reason, meta) {
+  if (ctx && ctx.approved) return; // already approved once for this tool call
+  if (!needsApproval(kind, meta)) return;
+  const approved = await requestHumanApproval(action, detail, reason);
+  if (!approved) {
+    throw new Error(`Permission denied: the user did not approve this (${action}: ${detail}). Do not retry the same action; ask the user or choose another approach.`);
+  }
+  if (ctx) ctx.approved = true;
+  logInfo(`Approved by user [${approvalMode}]: ${action} ${detail}`);
+}
+
+// ==========================================
+// Human Approval (via Bridge dashboard over IPC)
+// ==========================================
+const APPROVAL_TIMEOUT_MS = 90000; // stay under Cloudflare's ~100s limit for JSON clients
+const pendingApprovals = new Map();
+let nextApprovalId = 1;
+
+if (typeof process.on === 'function') {
+  process.on('message', (msg) => {
+    if (msg && msg.type === 'shutdown') { stopAllJobs(); process.exit(0); }
+    if (msg && msg.type === 'set-approval-mode') {
+      if (setApprovalMode(msg.mode)) { try { process.send({ type: 'approval-mode', mode: approvalMode }); } catch (e) {} }
+      return;
+    }
+    if (!msg || msg.type !== 'approval-response') return;
+    const pending = pendingApprovals.get(msg.id);
+    if (!pending) return;
+    pendingApprovals.delete(msg.id);
+    clearTimeout(pending.timer);
+    pending.resolve(Boolean(msg.approved));
+  });
+}
+
+function requestHumanApproval(action, detail, reason) {
+  if (typeof process.send !== 'function' || !process.connected) {
+    return Promise.resolve(false); // no dashboard attached -> never auto-approve
+  }
+  const id = nextApprovalId++;
+  const askedAt = Date.now();
+  appendRequestLog(`[APPROVAL] ${new Date().toISOString()} waiting for user: ${action}: ${String(detail).slice(0, 200)}\n`);
+  return new Promise((resolveRaw) => {
+    const resolve = (ok) => {
+      appendRequestLog(`[APPROVAL] ${new Date().toISOString()} ${ok ? 'approved' : 'denied/timed out'} after ${fmtDuration(Date.now() - askedAt)}: ${action}\n`);
+      resolveRaw(ok);
+    };
+    const timer = setTimeout(() => {
+      pendingApprovals.delete(id);
+      try { process.send({ type: 'approval-cancel', id }); } catch (e) {}
+      resolve(false);
+    }, APPROVAL_TIMEOUT_MS);
+    pendingApprovals.set(id, { resolve, timer });
+    try {
+      process.send({ type: 'approval-request', id, action, detail, reason });
+    } catch (e) {
+      clearTimeout(timer);
+      pendingApprovals.delete(id);
+      resolve(false);
+    }
+  });
+}
+
+// Folders the user has approved (or picked) as sandbox roots during this session.
+const approvedSandboxFolders = new Set([rootDir.toLowerCase()]);
+
+function getForbiddenSandboxReason(dir) {
+  const resolved = path.resolve(dir);
+  if (path.parse(resolved).root.toLowerCase() === (resolved.endsWith(path.sep) ? resolved : resolved + path.sep).toLowerCase()) {
+    return 'it is a whole drive';
+  }
+  const lower = resolved.toLowerCase();
+  if (lower === path.resolve(os.homedir()).toLowerCase()) return 'it is your entire user folder';
+  if (path.resolve(os.homedir(), '..').toLowerCase() === lower) return 'it contains every user folder';
+  const systemDirs = process.platform === 'win32'
+    ? [process.env.SystemRoot || 'C:\\Windows', process.env.ProgramFiles || 'C:\\Program Files', process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', process.env.ProgramData || 'C:\\ProgramData']
+    : ['/etc', '/bin', '/sbin', '/usr', '/boot', '/sys', '/proc', '/var', '/lib', '/System', '/Library'];
+  for (const sys of systemDirs) {
+    const s = path.resolve(sys).toLowerCase();
+    if (lower === s || lower.startsWith(s + path.sep)) return 'it is a system folder';
+  }
+  const sshDir = path.join(os.homedir(), '.ssh').toLowerCase();
+  if (lower === sshDir || lower.startsWith(sshDir + path.sep)) return 'it holds SSH keys';
+  return null;
+}
+
+// Tell the Bridge dashboard the active project changed so its PROJECT line stays accurate.
+function notifyProjectChanged() {
+  if (typeof process.send === 'function' && process.connected) {
+    try { process.send({ type: 'project-changed', path: rootDir }); } catch (e) {}
+  }
+}
+
+// Run the policy for a command; throws if blocked or denied.
+async function enforceCommandPolicy(cmd, ctx, isJob) {
+  const verdict = classifyCommand(cmd);
+  // Harmful commands are refused in every mode, including turbo.
+  if (verdict.level === 'block') {
+    logInfo(`Policy BLOCKED command (${verdict.reason}): ${cmd}`);
+    throw new Error(`Security Violation: Command blocked by Bridge safety policy because it ${verdict.reason}. Command: ${cmd}`);
+  }
+  const action = isJob ? 'Start background job' : 'Run command';
+  if (verdict.level === 'confirm') {
+    const regenerable = verdict.kinds.length === 1 && verdict.kinds[0] === 'delete-shell' && isRegenerableDelete(cmd);
+    // Ask if ANY category needs it in the current mode.
+    for (const kind of verdict.kinds) {
+      if (needsApproval(kind, { regenerable })) {
+        await gate(ctx, kind, action, cmd, verdict.reason, { regenerable });
+        return;
+      }
+    }
+    return;
+  }
+  await gate(ctx, isJob ? 'job' : 'command', action, cmd, isJob ? 'starts a long-running process' : 'runs a shell command');
+}
+
+function setApprovalMode(mode) {
+  if (!APPROVAL_MODES.includes(mode)) return false;
+  approvalMode = mode;
+  logInfo(`Approval mode set to: ${mode}`);
+  return true;
+}
+
+// Logs live in ~/.bridge/logs (never inside the user's project) and never contain the token.
+const LOG_DIR = path.join(os.homedir(), '.bridge', 'logs');
+const REQUEST_LOG = path.join(LOG_DIR, 'server_requests.log');
+try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch (e) {}
+
+const MAX_BODY_BYTES = 20 * 1024 * 1024;
+const MAX_LOG_BYTES = 10 * 1024 * 1024;
+let logWritesSinceCheck = 0;
+function appendRequestLog(line) {
+  const safe = line.replace(/([?&](token|apiKey|auth)=)[^&\s]+/gi, '$1[REDACTED]');
+  try {
+    // Rotate: keep one previous file so the log never fills the disk.
+    if (++logWritesSinceCheck >= 200) {
+      logWritesSinceCheck = 0;
+      if (fs.existsSync(REQUEST_LOG) && fs.statSync(REQUEST_LOG).size > MAX_LOG_BYTES) {
+        fs.renameSync(REQUEST_LOG, REQUEST_LOG + '.1');
+      }
+    }
+    fs.appendFileSync(REQUEST_LOG, safe);
+  } catch (e) {}
+  process.stderr.write(safe);
+}
+
+// Short client label for connection logs, e.g. "Google-Gemini/1.0" or "node".
+function clientLabel(req) {
+  const ua = String(req.headers['user-agent'] || 'unknown');
+  return ua.length > 60 ? ua.slice(0, 57) + '...' : ua;
+}
+
+function fmtDuration(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}m${s % 60}s`;
+}
 
 function logInfo(msg) {
   process.stderr.write(`[DSH-MCP] ${msg}\n`);
@@ -142,21 +430,187 @@ function validateAndResolve(requestedPath, allowNonExistent = false) {
     }
   }
 
-  if (fs.existsSync(resolved)) {
-    try {
-      const real = fs.realpathSync(resolved);
-      const realRel = path.relative(rootDir, real);
-      if (realRel.startsWith('..') || path.isAbsolute(realRel)) {
-        throw new Error(`Security Violation: Symlink points outside allowed directory (${real}).`);
-      }
-    } catch (e) {
-      if (e.message.includes('Security Violation')) throw e;
-    }
-  } else if (!allowNonExistent) {
+  const exists = fs.existsSync(resolved);
+  if (!exists && !allowNonExistent) {
     throw new Error(`File or directory does not exist: "${requestedPath}"`);
   }
 
+  // Resolve links (symlinks / junctions) on the path itself, or for a new file on its
+  // nearest existing parent folder, so a link inside the project cannot point outside it.
+  let probe = resolved;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
+  }
+  let real;
+  try {
+    real = fs.realpathSync(probe);
+  } catch (e) {
+    throw new Error(`Security Violation: Could not verify path "${requestedPath}".`);
+  }
+  if (!isInsideRoot(real)) {
+    throw new Error(`Security Violation: Path "${requestedPath}" resolves outside the sandboxed project folder (${real}).`);
+  }
+  if (exists && isSensitiveName(path.basename(real))) {
+    throw new Error(`Security Violation: Access to sensitive file "${path.basename(real)}" is blocked by security policy.`);
+  }
+
   return resolved;
+}
+
+function isInsideRoot(absPath) {
+  const rel = path.relative(rootDir, absPath);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function isSensitiveName(baseName) {
+  if (allowEnvFiles) return false;
+  return SENSITIVE_PATTERNS.some(pat => pat.test(baseName));
+}
+
+// Writes are refused inside version-control metadata: a file in .git/hooks runs on the next git command.
+function assertWritable(resolved) {
+  const rel = path.relative(rootDir, resolved).split(path.sep);
+  if (rel.some(part => part.toLowerCase() === '.git')) {
+    throw new Error('Security Violation: Writing inside the .git folder is blocked (hooks/config there can execute code). Use git commands instead.');
+  }
+}
+
+// Crash-safe write: write a temp file next to the target, then rename over it.
+function atomicWriteFile(resolved, content) {
+  assertWritable(resolved);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  const tmp = path.join(path.dirname(resolved), `.${path.basename(resolved)}.bridge-${process.pid}-${Date.now()}.tmp`);
+  try {
+    fs.writeFileSync(tmp, content, 'utf-8');
+    fs.renameSync(tmp, resolved);
+  } catch (e) {
+    try { fs.rmSync(tmp, { force: true }); } catch (err) {}
+    throw e;
+  }
+}
+
+// Background jobs: kill the whole process tree (a shell wrapper's children keep running
+// and holding ports otherwise), cap how many run, and stop them all when the server exits.
+const MAX_RUNNING_JOBS = 8;
+function killProcessTree(proc) {
+  if (!proc || proc.exitCode !== null || !proc.pid) return true;
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /PID ${proc.pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+    } else {
+      try { process.kill(-proc.pid, 'SIGTERM'); } catch (e) { proc.kill('SIGTERM'); }
+    }
+    return true;
+  } catch (e) {
+    try { proc.kill(); return true; } catch (err) { return false; }
+  }
+}
+function pruneFinishedJobs() {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [id, job] of backgroundJobs) {
+    if (job.record.status !== 'running' && job.record.endTime && job.record.endTime < cutoff) backgroundJobs.delete(id);
+  }
+}
+let shuttingDown = false;
+function stopAllJobs() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const job of backgroundJobs.values()) killProcessTree(job.proc);
+}
+process.on('exit', stopAllJobs);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => { stopAllJobs(); process.exit(0); });
+}
+// When the Bridge dashboard goes away (IPC closes), stop jobs and exit instead of lingering.
+process.on('disconnect', () => { stopAllJobs(); process.exit(0); });
+
+function isPrivateAddress(ip) {
+  const v = ip.toLowerCase().replace(/^::ffff:/, '');
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(v)) {
+    const [a, b] = v.split('.').map(Number);
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  return v === '::1' || v === '::' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80');
+}
+
+async function assertPublicHttpsUrl(urlString) {
+  const u = new URL(urlString);
+  if (u.protocol !== 'https:') throw new Error('Only https:// URLs are allowed (redirect to a non-HTTPS URL refused).');
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (/^(localhost|.*\.localhost|.*\.local|.*\.internal)$/i.test(host)) throw new Error(`Refusing to fetch local host "${host}".`);
+  const { lookup } = require('dns').promises;
+  const addrs = await lookup(host, { all: true });
+  for (const a of addrs) {
+    if (isPrivateAddress(a.address)) throw new Error(`Refusing to fetch "${host}": it resolves to a private/local address (${a.address}).`);
+  }
+}
+
+// Deleted items go to ~/.bridge/trash/<timestamp>/<project-relative path> (recoverable).
+const TRASH_DIR = path.join(os.homedir(), '.bridge', 'trash');
+function moveToTrash(resolved) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dest = path.join(TRASH_DIR, stamp, path.basename(rootDir), path.relative(rootDir, resolved));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  try {
+    fs.renameSync(resolved, dest);
+  } catch (e) {
+    // Different drive (EXDEV) or locked rename: copy, then remove the original.
+    fs.cpSync(resolved, dest, { recursive: true, errorOnExist: false });
+    fs.rmSync(resolved, { recursive: true, force: false });
+  }
+  return dest;
+}
+
+// Undo history: at most MAX_SNAPSHOTS per file and MAX_SNAPSHOT_BYTES in total.
+const MAX_SNAPSHOTS = 20;
+const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
+let snapshotBytes = 0;
+function saveSnapshot(resolved, content) {
+  if (typeof content !== 'string') return;
+  if (!fileBackups.has(resolved)) fileBackups.set(resolved, []);
+  const list = fileBackups.get(resolved);
+  list.push(content);
+  snapshotBytes += content.length;
+  while (list.length > MAX_SNAPSHOTS) snapshotBytes -= list.shift().length;
+  // Evict oldest snapshots across files when over the total budget.
+  if (snapshotBytes > MAX_SNAPSHOT_BYTES) {
+    for (const snaps of fileBackups.values()) {
+      while (snaps.length > 1 && snapshotBytes > MAX_SNAPSHOT_BYTES) snapshotBytes -= snaps.shift().length;
+      if (snapshotBytes <= MAX_SNAPSHOT_BYTES) break;
+    }
+  }
+}
+function popSnapshot(resolved) {
+  const list = fileBackups.get(resolved);
+  if (!list || list.length === 0) return null;
+  const content = list.pop();
+  snapshotBytes -= content.length;
+  return content;
+}
+
+// Read limits keep one huge file from exhausting memory or flooding the model's context.
+const MAX_READ_BYTES = 2 * 1024 * 1024;
+const MAX_SEARCH_FILE_BYTES = 1024 * 1024;
+function readTextFileLimited(resolved, size) {
+  if (size <= MAX_READ_BYTES) return { text: fs.readFileSync(resolved, 'utf-8'), truncated: false };
+  const fd = fs.openSync(resolved, 'r');
+  try {
+    const buf = Buffer.alloc(MAX_READ_BYTES);
+    const n = fs.readSync(fd, buf, 0, MAX_READ_BYTES, 0);
+    return { text: buf.slice(0, n).toString('utf-8'), truncated: true };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// String.replace treats "$&", "$1", "$'" in a plain replacement string as special codes;
+// a function replacer inserts the text literally.
+function literalReplace(content, target, replacement, all) {
+  if (all) return content.split(target).join(replacement);
+  return content.replace(target, () => replacement);
 }
 
 function isBinaryFile(filePath) {
@@ -559,7 +1013,7 @@ const tools = [
   // --- 8. Core Filesystem Suite (dsh-tool-fs) ---
   {
     name: 'select_project_folder',
-    description: 'Selects or changes the active sandboxed project folder. Can open a native Windows folder picker dialog or accept a direct path.',
+    description: 'Changes the active sandboxed project folder. Use this when the user asks you to work in a different folder (pass folder_path), then continue the task there; all tools then operate inside that folder. The user approves a new folder once in the Bridge dashboard (later switches to it are instant). Drive roots, the home folder itself and system folders are refused. Omit folder_path to open a native folder picker on the user\'s machine.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -709,8 +1163,66 @@ const tools = [
       },
       required: ['path']
     }
+  },
+  {
+    name: 'delete_file',
+    description: 'Bridge Delete: Deletes a file (or a folder with recursive: true) inside the project. The user must approve every delete in the Bridge dashboard; if denied, do not retry. Deleted text files can be restored with revert_file. Prefer this over rm/del shell commands.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'File or folder path relative to the project root.'
+        },
+        recursive: {
+          type: 'boolean',
+          description: 'Required to delete a folder and everything inside it.',
+          default: false
+        }
+      },
+      required: ['path']
+    }
   }
 ];
+
+// MCP tool annotations: clients (ChatGPT, Gemini, Claude) can use readOnlyHint
+// to skip per-call confirmation for tools that never modify the workspace.
+// Tools that write files or run commands stay unannotated so clients keep asking.
+const READ_ONLY_TOOLS = new Set([
+  'git_diff',
+  'git_status',
+  'inspect_dependencies',
+  'read',
+  'get_current_project',
+  'list_directory',
+  'read_file',
+  'read_files',
+  'search_files',
+  'get_file_info'
+]);
+for (const tool of tools) {
+  if (READ_ONLY_TOOLS.has(tool.name)) {
+    tool.annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  }
+}
+if (tools.some(t => t.name === 'fetch_web_documentation')) {
+  tools.find(t => t.name === 'fetch_web_documentation').annotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
+}
+// Writes/edits are non-destructive: every overwrite is snapshotted and undoable with revert_file.
+const SAFE_WRITE_TOOLS = new Set([
+  'edit', 'edit_file', 'str_replace_editor', 'write', 'write_file', 'write_files', 'revert_file', 'plan_mode', 'manage_plan'
+]);
+// Shell tools: Bridge itself blocks harmful commands and asks the user before deletes.
+const GUARDED_SHELL_TOOLS = new Set(['bash', 'pwsh', 'execute_command', 'jobs', 'manage_background_job']);
+for (const tool of tools) {
+  if (SAFE_WRITE_TOOLS.has(tool.name)) {
+    tool.annotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+  } else if (GUARDED_SHELL_TOOLS.has(tool.name)) {
+    tool.annotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
+  } else if (tool.name === 'delete_file') {
+    tool.annotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
+  }
+}
 
 const prompts = [
   {
@@ -741,7 +1253,15 @@ RULES:
 2. Check git_diff before declaring a task finished.
 3. You are strictly confined to "${rootDir}". All execution runs within this directory.
 4. High Efficiency: When reading multiple files, use "read_files" with an array of paths to retrieve them all in a single fast call.
-5. Batch Operations: When creating or modifying multiple files, use "write_files" with an array of { path, content } objects to execute them atomically in one call.`;
+5. Batch Operations: When creating or modifying multiple files, use "write_files" with an array of { path, content } objects to execute them atomically in one call.
+6. Approvals: The user's current approval mode is "${approvalMode}". ${{
+    turbo: 'Actions run without asking (harmful commands are still blocked).',
+    review: 'The user approves every change (writes, edits, commands, deletes) on their machine; batch related writes with write_files to reduce prompts.',
+    default: 'Deletes, destructive git commands, secret files and new project folders wait for the user to approve them on their machine.',
+    auto: 'Bridge asks the user only for actions it cannot undo (shell deletes of source files, destructive git, secret files, new folders). delete_file and deleting build/cache folders run without asking.'
+  }[approvalMode]} Prefer "delete_file" for deletes (recoverable from the Bridge trash). If something is denied, do not retry it; continue another way or ask the user.
+7. Safety Policy: Commands that damage the system (disk formatting, shutdown, registry or security changes, privilege elevation, piping downloads into a shell, encoded payloads) are blocked. Do not try to work around a blocked command.
+8. pwsh runs PowerShell, execute_command runs the default system shell (cmd.exe on Windows).`;
 }
 
 // ==========================================
@@ -750,6 +1270,7 @@ RULES:
 
 async function handleToolCall(name, args) {
   args = args || {};
+  const ctx = { approved: false }; // one approval covers the whole tool call
 
   switch (name) {
     // --- 1. Subprocess Execution (dsh-tool-bash, dsh-tool-pwsh) ---
@@ -761,21 +1282,23 @@ async function handleToolCall(name, args) {
       const cmd = args.command;
       if (!cmd || typeof cmd !== 'string') throw new Error('Command must be a non-empty string.');
 
-      for (const pattern of BLOCKED_COMMANDS) {
-        if (pattern.test(cmd)) {
-          throw new Error(`Security Violation: Command "${cmd}" is blocked by Bridge safety policies.`);
-        }
-      }
+      await enforceCommandPolicy(cmd, ctx, false);
 
       const timeoutMs = Math.min(Math.max(5, (args.timeout_seconds || 60)) * 1000, 180000);
 
+      // The pwsh tool must actually run PowerShell (exec defaults to cmd.exe on Windows).
+      const execOptions = {
+        cwd: rootDir,
+        timeout: timeoutMs,
+        maxBuffer: 1024 * 1024 * 4,
+        windowsHide: true
+      };
+      if (name === 'pwsh') {
+        execOptions.shell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh';
+      }
+
       return new Promise((resolve) => {
-        exec(cmd, {
-          cwd: rootDir,
-          timeout: timeoutMs,
-          maxBuffer: 1024 * 1024 * 4,
-          windowsHide: true
-        }, (error, stdout, stderr) => {
+        exec(cmd, execOptions, (error, stdout, stderr) => {
           const exitCode = error ? (error.code !== undefined ? error.code : 1) : 0;
           let output = '';
           if (stdout && stdout.trim()) output += `STDOUT:\n${stdout.trim()}\n`;
@@ -793,18 +1316,25 @@ async function handleToolCall(name, args) {
       const action = args.action;
       if (action === 'start') {
         if (isReadOnly) throw new Error('Server running in read-only mode.');
+        if (disableShell) throw new Error('Security Violation: Shell execution is disabled on this server.');
         const cmd = args.command;
-        if (!cmd) throw new Error('Must specify command to start background job.');
+        if (!cmd || typeof cmd !== 'string') throw new Error('Must specify command to start background job.');
+
+        // Background jobs go through the same safety policy as execute_command.
+        await enforceCommandPolicy(cmd, ctx, true);
+
+        const running = Array.from(backgroundJobs.values()).filter(j => j.record.status === 'running').length;
+        if (running >= MAX_RUNNING_JOBS) {
+          throw new Error(`Too many background jobs running (${running}). Stop one with action="stop" first.`);
+        }
+        pruneFinishedJobs();
 
         const jobId = nextJobId++;
-        const parts = cmd.split(' ');
-        const bin = parts[0];
-        const cmdArgs = parts.slice(1);
-
-        const proc = spawn(bin, cmdArgs, {
+        const proc = spawn(cmd, {
           cwd: rootDir,
           shell: true,
-          windowsHide: true
+          windowsHide: true,
+          detached: process.platform !== 'win32' // own process group on Unix so stop kills children too
         });
 
         const jobRecord = {
@@ -816,15 +1346,21 @@ async function handleToolCall(name, args) {
         };
 
         proc.stdout.on('data', d => {
-          jobRecord.logs.push(d.toString());
+          jobRecord.logs.push(d.toString().slice(-8000));
           if (jobRecord.logs.length > 50) jobRecord.logs.shift();
         });
         proc.stderr.on('data', d => {
-          jobRecord.logs.push(d.toString());
+          jobRecord.logs.push(d.toString().slice(-8000));
           if (jobRecord.logs.length > 50) jobRecord.logs.shift();
         });
         proc.on('exit', code => {
-          jobRecord.status = `exited with code ${code}`;
+          if (jobRecord.status === 'running') jobRecord.status = `exited with code ${code}`;
+          jobRecord.endTime = Date.now();
+        });
+        proc.on('error', err => {
+          // Without this handler a failed spawn would crash the whole server.
+          jobRecord.status = `failed to start: ${err.message}`;
+          jobRecord.endTime = Date.now();
         });
 
         backgroundJobs.set(jobId, { proc, record: jobRecord });
@@ -842,13 +1378,9 @@ async function handleToolCall(name, args) {
         const jobId = args.job_id;
         const job = backgroundJobs.get(jobId);
         if (!job) throw new Error(`Job #${jobId} not found.`);
-        try {
-          job.proc.kill();
-          job.record.status = 'stopped';
-          return `Job #${jobId} stopped successfully.`;
-        } catch (e) {
-          return `Could not stop job #${jobId}: ${e.message}`;
-        }
+        const ok = killProcessTree(job.proc);
+        job.record.status = ok ? 'stopped' : job.record.status;
+        return ok ? `Job #${jobId} and its child processes were stopped.` : `Could not stop job #${jobId}.`;
       } else {
         const jobId = args.job_id;
         const job = backgroundJobs.get(jobId);
@@ -866,11 +1398,14 @@ async function handleToolCall(name, args) {
         cmd = `git diff -- "${rel}"`;
       }
       return new Promise((resolve) => {
-        exec(cmd, { cwd: rootDir, timeout: 10000 }, (error, stdout, stderr) => {
+        exec(cmd, { cwd: rootDir, timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
           if (error && !stdout) {
             resolve(`Git diff unavailable: ${stderr || error.message}`);
           } else {
-            resolve(stdout.trim() || 'No uncommitted changes detected (clean working tree).');
+            const out = stdout.trim();
+            resolve(out.length > 200000
+              ? out.slice(0, 200000) + `\n\n[Diff truncated: ${out.length} characters total. Pass file_path to see one file.]`
+              : (out || 'No uncommitted changes detected (clean working tree).'));
           }
         });
       });
@@ -956,12 +1491,11 @@ async function handleToolCall(name, args) {
         throw new Error(`Target snippet not found in "${filePath}". Check whitespace and indentation.`);
       }
 
-      // Save undo snapshot
-      if (!fileBackups.has(resolved)) fileBackups.set(resolved, []);
-      fileBackups.get(resolved).push(content);
-
-      const updated = replaceAll ? content.split(target).join(replacement) : content.replace(target, replacement);
-      fs.writeFileSync(resolved, updated, 'utf-8');
+      assertWritable(resolved);
+      await gate(ctx, 'write', 'Edit file', path.relative(rootDir, resolved), 'changes a file (undo with revert_file)');
+      const updated = literalReplace(content, target, replacement, replaceAll);
+      saveSnapshot(resolved, content);
+      atomicWriteFile(resolved, updated);
       return replaceAll
         ? `The file ${filePath} has been updated. All occurrences were successfully replaced.`
         : `The file ${filePath} has been updated successfully. (Snapshot saved. Can revert with revert_file).`;
@@ -980,7 +1514,8 @@ async function handleToolCall(name, args) {
           const entries = fs.readdirSync(resolved);
           return `Directory listing for ${filePath}:\n` + entries.slice(0, 50).join('\n');
         }
-        const content = fs.readFileSync(resolved, 'utf-8');
+        const { text: content, truncated } = readTextFileLimited(resolved, stat.size);
+        if (truncated) return `[File is ${stat.size} bytes; too large to view at once. Use read_file with offset/limit.]`;
         const lines = content.split(/\r?\n/);
         let start = 1;
         let end = lines.length;
@@ -991,29 +1526,38 @@ async function handleToolCall(name, args) {
         return lines.slice(start - 1, end).map((l, i) => `${String(start + i).padStart(4, ' ')} | ${l}`).join('\n');
       } else if (cmd === 'create') {
         const resolved = validateAndResolve(filePath, true);
-        const dir = path.dirname(resolved);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(resolved, args.file_text || '', 'utf-8');
+        assertWritable(resolved);
+        await gate(ctx, 'write', 'Create file', path.relative(rootDir, resolved), 'creates or overwrites a file');
+        if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+          saveSnapshot(resolved, fs.readFileSync(resolved, 'utf-8'));
+        }
+        atomicWriteFile(resolved, args.file_text || '');
         return `File created successfully at: ${filePath}`;
       } else if (cmd === 'str_replace') {
         const resolved = validateAndResolve(filePath);
+        if (isBinaryFile(resolved)) throw new Error(`Cannot edit binary file "${filePath}".`);
         const content = fs.readFileSync(resolved, 'utf-8');
         const oldStr = args.old_str;
         const newStr = args.new_str || '';
+        if (!oldStr) throw new Error('old_str is required.');
         if (!content.includes(oldStr)) throw new Error(`old_str not found in ${filePath}`);
-        if (!fileBackups.has(resolved)) fileBackups.set(resolved, []);
-        fileBackups.get(resolved).push(content);
-        fs.writeFileSync(resolved, content.replace(oldStr, newStr), 'utf-8');
+        assertWritable(resolved);
+        await gate(ctx, 'write', 'Edit file', path.relative(rootDir, resolved), 'changes a file (undo with revert_file)');
+        saveSnapshot(resolved, content);
+        atomicWriteFile(resolved, literalReplace(content, oldStr, newStr, false));
         return `The file ${filePath} has been updated successfully.`;
       } else if (cmd === 'insert') {
         const resolved = validateAndResolve(filePath);
+        if (isBinaryFile(resolved)) throw new Error(`Cannot edit binary file "${filePath}".`);
         const content = fs.readFileSync(resolved, 'utf-8');
+        const eol = content.includes('\r\n') ? '\r\n' : '\n'; // keep the file's own line endings
         const lines = content.split(/\r?\n/);
         const lineNum = Math.max(0, Math.min(lines.length, args.insert_line || 0));
-        lines.splice(lineNum, 0, args.new_str || '');
-        if (!fileBackups.has(resolved)) fileBackups.set(resolved, []);
-        fileBackups.get(resolved).push(content);
-        fs.writeFileSync(resolved, lines.join('\n'), 'utf-8');
+        lines.splice(lineNum, 0, ...String(args.new_str || '').split(/\r?\n/));
+        assertWritable(resolved);
+        await gate(ctx, 'write', 'Insert into file', path.relative(rootDir, resolved), 'changes a file (undo with revert_file)');
+        saveSnapshot(resolved, content);
+        atomicWriteFile(resolved, lines.join(eol));
         return `Inserted content into ${filePath} at line ${lineNum}.`;
       } else {
         throw new Error(`Unknown str_replace_editor command: ${cmd}`);
@@ -1022,29 +1566,51 @@ async function handleToolCall(name, args) {
 
     case 'revert_file': {
       if (isReadOnly) throw new Error('Server running in read-only mode.');
-      const resolved = validateAndResolve(args.path);
-      const history = fileBackups.get(resolved);
-
-      if (!history || history.length === 0) {
+      const resolved = validateAndResolve(args.path, true); // also restores files removed by delete_file
+      if (!(fileBackups.get(resolved) || []).length) {
+        throw new Error(`No undo snapshots available for "${args.path}".`);
+      }
+      await gate(ctx, 'write', 'Revert file', path.relative(rootDir, resolved), 'restores an earlier version of a file');
+      const previous = popSnapshot(resolved);
+      if (previous === null) {
         throw new Error(`No undo snapshots available for "${args.path}".`);
       }
 
-      const previous = history.pop();
-      fs.writeFileSync(resolved, previous, 'utf-8');
-      return `Successfully reverted "${args.path}" to previous snapshot. (${history.length} snapshots remaining).`;
+      atomicWriteFile(resolved, previous);
+      const remaining = (fileBackups.get(resolved) || []).length;
+      return `Successfully reverted "${args.path}" to previous snapshot. (${remaining} snapshots remaining).`;
     }
 
     // --- 6. Web Documentation Fetcher ---
     case 'fetch_web_documentation': {
       const targetUrl = args.url;
-      if (!targetUrl || !targetUrl.startsWith('https://')) {
+      if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('https://')) {
         throw new Error('URL must start with https://');
       }
 
       try {
-        const response = await fetch(targetUrl, { headers: { 'User-Agent': 'Bridge-MCP-Agent/1.0' } });
+        // Follow redirects by hand so every hop is checked: public HTTPS hosts only, never
+        // localhost / LAN / cloud-metadata addresses (stops the model probing the user's network).
+        let current = targetUrl;
+        let response = null;
+        for (let hop = 0; hop <= 5; hop++) {
+          await assertPublicHttpsUrl(current);
+          response = await fetch(current, {
+            headers: { 'User-Agent': 'Bridge-MCP-Agent/1.0' },
+            redirect: 'manual',
+            signal: AbortSignal.timeout(20000)
+          });
+          if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
+            current = new URL(response.headers.get('location'), current).toString();
+            continue;
+          }
+          break;
+        }
+        if (response.status >= 300 && response.status < 400) throw new Error('Too many redirects.');
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const text = await response.text();
+        const declared = Number(response.headers.get('content-length') || 0);
+        if (declared > 5 * 1024 * 1024) throw new Error(`Page too large (${declared} bytes).`);
+        const text = (await response.text()).slice(0, 5 * 1024 * 1024);
         const clean = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                           .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
                           .replace(/<[^>]+>/g, ' ')
@@ -1091,9 +1657,30 @@ async function handleToolCall(name, args) {
         throw new Error(`Target path "${targetPath}" is not a valid directory.`);
       }
 
-      rootDir = fs.realpathSync(resolved);
+      const realTarget = fs.realpathSync(resolved);
+
+      // Never sandbox a whole drive, the home folder itself, or system folders.
+      const forbiddenReason = getForbiddenSandboxReason(realTarget);
+      if (forbiddenReason) {
+        throw new Error(`Security Violation: "${realTarget}" cannot be used as a project folder (${forbiddenReason}). Choose a specific project folder.`);
+      }
+
+      // The model may switch folders when the user asks it to, but the server cannot tell a
+      // real user request from a prompt injection, so a path typed by the model needs one Y
+      // in the Bridge dashboard. Folders approved once (or picked by the user) are remembered
+      // for this session and switch instantly afterwards.
+      const pickedByUser = !args.folder_path || args.folder_path === 'browse' || args.folder_path === 'picker';
+      if (!pickedByUser && !approvedSandboxFolders.has(realTarget.toLowerCase())) {
+        await gate(ctx, 'folder-switch', 'Switch project folder', realTarget, 'lets the AI read, write and run commands in this folder');
+      }
+
+      const previousRoot = rootDir;
+      rootDir = realTarget;
+      approvedSandboxFolders.add(rootDir.toLowerCase());
+      approvedSandboxFolders.add(previousRoot.toLowerCase()); // switching back needs no new approval
       currentPlan = [];
-      fileBackups.clear();
+      // Undo history is keyed by absolute path, so it stays valid across folder switches.
+      notifyProjectChanged();
       logInfo(`Switched project to: ${rootDir}`);
       return `✓ Project folder successfully set to: "${rootDir}".\nBridge now strictly sandboxed to this folder.`;
     }
@@ -1148,11 +1735,19 @@ async function handleToolCall(name, args) {
         for (const entry of entries) {
           if (entry.name.startsWith('.')) continue;
           if (entry.isDirectory() && IGNORED_DIRS.has(entry.name)) continue;
+          if (results.length >= 2000) return;
 
           const fullEntryPath = path.join(currentDir, entry.name);
           const relPath = path.relative(rootDir, fullEntryPath).replace(/\\/g, '/');
 
+          if (entry.isSymbolicLink()) {
+            results.push({ type: 'link', path: relPath });
+            continue;
+          }
           if (entry.isDirectory()) {
+            let inside = false;
+            try { inside = isInsideRoot(fs.realpathSync(fullEntryPath)); } catch (e) {}
+            if (!inside) { results.push({ type: 'link', path: relPath }); continue; }
             results.push({ type: 'dir', path: relPath });
             walk(fullEntryPath, currentDepth + 1);
           } else {
@@ -1166,7 +1761,9 @@ async function handleToolCall(name, args) {
       walk(resolved, 1);
       if (results.length === 0) return `Directory "${targetRel}" is empty.`;
 
-      const formatted = results.map(item => item.type === 'dir' ? `[DIR]  ${item.path}/` : `[FILE] ${item.path} (${item.size} bytes)`).join('\n');
+      const formatted = results.map(item => item.type === 'dir' ? `[DIR]  ${item.path}/`
+        : item.type === 'link' ? `[LINK] ${item.path} (link; not followed)`
+        : `[FILE] ${item.path} (${item.size} bytes)`).join('\n');
       return `Workspace: "${rootDir}"\n\n${formatted}`;
     }
 
@@ -1179,8 +1776,9 @@ async function handleToolCall(name, args) {
       if (stat.isDirectory()) throw new Error(`"${filePath}" is a directory.`);
       if (isBinaryFile(resolved)) return `[Binary file (${stat.size} bytes) cannot be displayed as text.]`;
 
-      const content = fs.readFileSync(resolved, 'utf-8');
+      const { text: content, truncated } = readTextFileLimited(resolved, stat.size);
       const lines = content.split(/\r?\n/);
+      if (truncated) lines.pop(); // last line may be cut mid-way
       const totalLines = lines.length;
 
       let startLine = 1;
@@ -1194,7 +1792,8 @@ async function handleToolCall(name, args) {
       const slice = lines.slice(startLine - 1, endLine);
       const outputLines = slice.map((line, idx) => `${String(startLine + idx).padStart(4, ' ')} | ${line}`);
 
-      return `File: ${filePath} (Lines ${startLine}-${endLine} of ${totalLines}):\n\n${outputLines.join('\n')}`;
+      const note = truncated ? `\n\n[Only the first ${MAX_READ_BYTES / (1024 * 1024)} MB of this ${stat.size}-byte file can be read.]` : '';
+      return `File: ${filePath} (Lines ${startLine}-${endLine} of ${totalLines}${truncated ? '+' : ''}):\n\n${outputLines.join('\n')}${note}`;
     }
 
     case 'read_files':
@@ -1205,10 +1804,15 @@ async function handleToolCall(name, args) {
       }
 
       const results = [];
+      let budget = MAX_READ_BYTES * 2; // total bytes returned by one batch read
       for (const fp of filePaths) {
         try {
           const resolved = validateAndResolve(fp);
           const stat = fs.statSync(resolved);
+          if (!stat.isDirectory() && stat.size > budget) {
+            results.push(`=== FILE: ${fp} ===\n[Skipped: ${stat.size} bytes exceeds the remaining batch limit. Read it alone with read_file.]\n=== END: ${fp} ===`);
+            continue;
+          }
           if (stat.isDirectory()) {
             results.push(`=== FILE: ${fp} ===\n[Error: "${fp}" is a directory]\n=== END: ${fp} ===`);
             continue;
@@ -1218,6 +1822,7 @@ async function handleToolCall(name, args) {
             continue;
           }
           const content = fs.readFileSync(resolved, 'utf-8');
+          budget -= stat.size;
           results.push(`=== FILE: ${fp} (${stat.size} bytes) ===\n${content}\n=== END: ${fp} ===`);
         } catch (err) {
           results.push(`=== FILE: ${fp} ===\n[Error: ${err.message}]\n=== END: ${fp} ===`);
@@ -1233,18 +1838,20 @@ async function handleToolCall(name, args) {
       const filePath = args.file_path || args.path;
       if (!filePath) throw new Error('file_path or path parameter is required.');
       const resolved = validateAndResolve(filePath, true);
-      const dir = path.dirname(resolved);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      assertWritable(resolved);
+
+      await gate(ctx, 'write', 'Write file', path.relative(rootDir, resolved), 'creates or overwrites a file (undo with revert_file)');
 
       // Save undo snapshot if file exists
-      if (fs.existsSync(resolved)) {
-        if (!fileBackups.has(resolved)) fileBackups.set(resolved, []);
-        fileBackups.get(resolved).push(fs.readFileSync(resolved, 'utf-8'));
+      const existedBefore = fs.existsSync(resolved);
+      if (existedBefore) {
+        if (fs.statSync(resolved).isDirectory()) throw new Error(`"${filePath}" is a directory.`);
+        saveSnapshot(resolved, fs.readFileSync(resolved, 'utf-8'));
       }
 
-      fs.writeFileSync(resolved, args.content !== undefined ? args.content : '', 'utf-8');
+      atomicWriteFile(resolved, args.content !== undefined ? String(args.content) : '');
       const stat = fs.statSync(resolved);
-      return `<path>${filePath}</path>\n<type>file</type>\n<content>\n${fs.existsSync(resolved) ? 'Updated' : 'Created'} file (${stat.size} bytes)\n</content>`;
+      return `<path>${filePath}</path>\n<type>file</type>\n<content>\n${existedBefore ? 'Updated' : 'Created'} file (${stat.size} bytes)\n</content>`;
     }
 
     case 'write_files':
@@ -1255,25 +1862,77 @@ async function handleToolCall(name, args) {
         throw new Error('files parameter must be a non-empty array of objects with { path, content }.');
       }
 
-      const results = [];
-      for (const item of files) {
-        const filePath = item.path || item.file_path;
-        if (!filePath) continue;
-        const resolved = validateAndResolve(filePath, true);
-        const dir = path.dirname(resolved);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-        if (fs.existsSync(resolved)) {
-          if (!fileBackups.has(resolved)) fileBackups.set(resolved, []);
-          fileBackups.get(resolved).push(fs.readFileSync(resolved, 'utf-8'));
+      // Validate every path before writing anything, so one bad path cannot leave a half-applied batch.
+      const plan = files.map((item, idx) => {
+        const filePath = item && (item.path || item.file_path);
+        if (!filePath) throw new Error(`files[${idx}] is missing a path. Nothing was written.`);
+        let resolved;
+        try {
+          resolved = validateAndResolve(filePath, true);
+          assertWritable(resolved);
+          if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) throw new Error('is a directory');
+        } catch (err) {
+          throw new Error(`files[${idx}] "${filePath}": ${err.message} Nothing was written.`);
         }
+        return { filePath, resolved, content: item.content !== undefined ? String(item.content) : '' };
+      });
 
-        fs.writeFileSync(resolved, item.content !== undefined ? item.content : '', 'utf-8');
-        const stat = fs.statSync(resolved);
-        results.push(`- ${filePath} (${stat.size} bytes)`);
+      await gate(ctx, 'write', `Write ${plan.length} file${plan.length === 1 ? '' : 's'}`,
+        plan.map(p => path.relative(rootDir, p.resolved)).join(', '), 'creates or overwrites files (undo with revert_file)');
+
+      // Apply; if a write fails midway, roll back the files already written in this batch.
+      const applied = [];
+      try {
+        for (const p of plan) {
+          const before = fs.existsSync(p.resolved) ? fs.readFileSync(p.resolved, 'utf-8') : null;
+          atomicWriteFile(p.resolved, p.content);
+          applied.push({ ...p, before });
+        }
+      } catch (err) {
+        for (const a of applied.reverse()) {
+          try {
+            if (a.before === null) fs.rmSync(a.resolved, { force: true });
+            else atomicWriteFile(a.resolved, a.before);
+          } catch (e) {}
+        }
+        throw new Error(`Batch write failed at "${plan[applied.length].filePath}": ${err.message}. All files in this batch were rolled back.`);
       }
 
+      const results = applied.map(a => {
+        if (a.before !== null) saveSnapshot(a.resolved, a.before);
+        return `- ${a.filePath} (${Buffer.byteLength(a.content)} bytes)`;
+      });
       return `Successfully wrote ${results.length} files:\n${results.join('\n')}`;
+    }
+
+    case 'delete_file': {
+      if (isReadOnly) throw new Error('Server running in read-only mode.');
+      const filePath = args.path || args.file_path;
+      if (!filePath) throw new Error('path parameter is required.');
+      const resolved = validateAndResolve(filePath);
+      if (resolved === rootDir) throw new Error('Refusing to delete the project root.');
+      const stat = fs.statSync(resolved);
+      const isDir = stat.isDirectory();
+      if (isDir && !args.recursive) {
+        throw new Error(`"${filePath}" is a directory. Pass recursive: true to delete it and everything inside.`);
+      }
+
+      await gate(ctx, 'delete-tool',
+        isDir ? 'Delete folder' : 'Delete file',
+        path.relative(rootDir, resolved) + (isDir ? path.sep + ' (recursive)' : ''),
+        isDir ? 'deletes a folder and its contents (kept in the Bridge trash)' : 'deletes a file (kept in the Bridge trash)');
+
+      assertWritable(resolved);
+      // Keep a text snapshot so revert_file can bring a deleted file back.
+      if (!isDir && !isBinaryFile(resolved) && stat.size <= MAX_READ_BYTES) {
+        saveSnapshot(resolved, fs.readFileSync(resolved, 'utf-8'));
+      }
+      // Move to Bridge's trash instead of erasing, so any delete (binary, folders) can be recovered.
+      const trashPath = moveToTrash(resolved);
+      logInfo(`Deleted with user approval: ${resolved} -> ${trashPath}`);
+      return isDir
+        ? `Deleted folder "${filePath}" (approved by user). A copy is kept in the Bridge trash: ${trashPath}`
+        : `Deleted file "${filePath}" (approved by user). Use revert_file to restore it; a copy is also in the Bridge trash: ${trashPath}`;
     }
 
     case 'search_files': {
@@ -1285,21 +1944,35 @@ async function handleToolCall(name, args) {
       const matches = [];
       const MAX_MATCHES = 40;
 
-      function searchDir(currentDir) {
-        if (matches.length >= MAX_MATCHES) return;
-        const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      if (!query || typeof query !== 'string') throw new Error('query parameter is required.');
+      let filesScanned = 0;
+      const MAX_FILES_SCANNED = 5000;
+
+      function searchDir(currentDir, depth) {
+        if (matches.length >= MAX_MATCHES || depth > 25) return;
+        let entries;
+        try { entries = fs.readdirSync(currentDir, { withFileTypes: true }); } catch (e) { return; }
 
         for (const entry of entries) {
-          if (matches.length >= MAX_MATCHES) break;
+          if (matches.length >= MAX_MATCHES || filesScanned >= MAX_FILES_SCANNED) break;
           if (entry.name.startsWith('.')) continue;
+          // Never follow links: a link inside the project could point at files outside it.
+          if (entry.isSymbolicLink()) continue;
           if (entry.isDirectory() && IGNORED_DIRS.has(entry.name)) continue;
 
           const fullPath = path.join(currentDir, entry.name);
           if (entry.isDirectory()) {
-            searchDir(fullPath);
-          } else {
+            // Junctions on Windows report as directories; check the real target stays inside.
+            try { if (!isInsideRoot(fs.realpathSync(fullPath))) continue; } catch (e) { continue; }
+            searchDir(fullPath, depth + 1);
+          } else if (entry.isFile()) {
             if (extFilter && !entry.name.toLowerCase().endsWith(extFilter)) continue;
+            if (isSensitiveName(entry.name)) continue; // same secret-file rules as read_file
+            try {
+              if (fs.statSync(fullPath).size > MAX_SEARCH_FILE_BYTES) continue;
+            } catch (e) { continue; }
             if (isBinaryFile(fullPath)) continue;
+            filesScanned++;
 
             try {
               const fileContent = fs.readFileSync(fullPath, 'utf-8');
@@ -1308,7 +1981,7 @@ async function handleToolCall(name, args) {
                 if (matches.length >= MAX_MATCHES) break;
                 if (lines[i].includes(query)) {
                   const rel = path.relative(rootDir, fullPath).replace(/\\/g, '/');
-                  matches.push(`${rel}:${i + 1}: ${lines[i].trim()}`);
+                  matches.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, 300)}`);
                 }
               }
             } catch (e) {}
@@ -1316,7 +1989,8 @@ async function handleToolCall(name, args) {
         }
       }
 
-      searchDir(resolved);
+      if (!fs.statSync(resolved).isDirectory()) throw new Error(`"${targetRel}" is not a directory.`);
+      searchDir(resolved, 0);
       if (matches.length === 0) return `No matches found for "${query}".`;
       return `Search results for "${query}":\n\n${matches.join('\n')}`;
     }
@@ -1359,7 +2033,7 @@ async function processJsonRpcMessage(msg) {
         },
         serverInfo: {
           name: 'Bridge',
-          version: '1.0.14'
+          version: '1.1.0'
         }
       }
     };
@@ -1500,22 +2174,15 @@ function startHttpServer(port) {
         sseSessions.delete(sessionId);
       }
     }
-    // Fallback: send to all active SSE connections
-    for (const [id, session] of sseSessions.entries()) {
-      try {
-        session.res.write(sseFormatted);
-      } catch (e) {
-        sseSessions.delete(id);
-      }
-    }
+    // No fallback broadcast. Streamable HTTP clients (e.g. Gemini) POST without
+    // a sessionId and already get the reply in the POST body. Broadcasting it to
+    // every open SSE stream delivers responses with unknown ids to other clients,
+    // which the MCP SDK treats as a protocol error and reconnects.
   }
 
   const server = http.createServer(async (req, res) => {
     const logLine = `[HTTP] ${new Date().toISOString()} ${req.method} ${req.url} (Accept: ${req.headers.accept || '*/*'}) host: ${req.headers.host || ''}\n`;
-    try {
-      fs.appendFileSync(path.join(rootDir || __dirname, 'server_requests.log'), logLine);
-    } catch (e) {}
-    process.stderr.write(logLine);
+    appendRequestLog(logLine);
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1531,8 +2198,7 @@ function startHttpServer(port) {
 
     if (authToken && !verifyAuth(req, url)) {
       const authErrLog = `[401-UNAUTHORIZED] ${new Date().toISOString()} ${req.method} ${url.pathname}\n`;
-      try { fs.appendFileSync(path.join(rootDir || __dirname, 'server_requests.log'), authErrLog); } catch (e) {}
-      process.stderr.write(authErrLog);
+      appendRequestLog(authErrLog);
 
       res.writeHead(401, {
         'Content-Type': 'application/json',
@@ -1571,26 +2237,39 @@ function startHttpServer(port) {
         res.write(`: ${' '.repeat(2048)}\n\n`);
         res.write(`event: endpoint\ndata: ${endpointUri}\n\n`);
 
+        const openedAt = Date.now();
+        const shortId = sessionId.slice(0, 8);
+        let pingsSent = 0;
+        let closeReason = 'client closed the stream';
+
         const keepAlive = setInterval(() => {
           try {
             res.write(': ping\n\n');
             res.write('event: ping\ndata: {}\n\n');
+            pingsSent++;
           } catch (e) {
+            closeReason = `ping write failed: ${e.message}`;
             clearInterval(keepAlive);
             sseSessions.delete(sessionId);
           }
         }, 15000);
 
         sseSessions.set(sessionId, { res, keepAlive });
+        appendRequestLog(`[SSE-OPEN] ${new Date().toISOString()} stream ${shortId} opened by "${clientLabel(req)}" via ${host} (open streams: ${sseSessions.size})\n`);
 
-        const cleanup = () => {
+        let closed = false;
+        const cleanup = (why) => {
+          if (closed) return;
+          closed = true;
+          if (why) closeReason = why;
           clearInterval(keepAlive);
           sseSessions.delete(sessionId);
+          appendRequestLog(`[SSE-CLOSE] ${new Date().toISOString()} stream ${shortId} closed after ${fmtDuration(Date.now() - openedAt)} (${pingsSent} pings sent; ${closeReason}; open streams: ${sseSessions.size})\n`);
         };
-        req.on('close', cleanup);
-        req.on('error', cleanup);
-        res.on('close', cleanup);
-        res.on('error', cleanup);
+        req.on('close', () => cleanup());
+        req.on('error', (e) => cleanup(`request error: ${e.message}`));
+        res.on('close', () => cleanup());
+        res.on('error', (e) => cleanup(`response error: ${e.message}`));
         return;
       }
 
@@ -1613,7 +2292,7 @@ function startHttpServer(port) {
         info: {
           title: 'Bridge MCP API',
           description: 'Full software engineering harness: execution, background jobs, git, dependency analysis, atomic undo, and filesystem.',
-          version: '1.0.14'
+          version: '1.1.0'
         },
         servers: [{ url: `https://${req.headers.host}` }],
         paths: {
@@ -1675,8 +2354,16 @@ function startHttpServer(port) {
 
     if (req.method === 'POST' && url.pathname === '/api/set-directory') {
       let body = '';
-      req.on('data', chunk => { body += chunk; });
+      req.on('data', chunk => {
+        body += chunk;
+        if (body.length > MAX_BODY_BYTES) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Request body too large (limit 20 MB).' } }));
+          req.destroy();
+        }
+      });
       req.on('end', () => {
+        if (res.writableEnded) return;
         try {
           const payload = JSON.parse(body);
           let targetPath = payload.path;
@@ -1686,6 +2373,7 @@ function startHttpServer(port) {
             throw new Error(`Directory "${targetPath}" does not exist.`);
           }
           rootDir = fs.realpathSync(resolved);
+          approvedSandboxFolders.add(rootDir.toLowerCase()); // chosen by the user with [D]
           currentPlan = [];
           fileBackups.clear();
           logInfo(`Switched project directory via CLI to: ${rootDir}`);
@@ -1701,8 +2389,16 @@ function startHttpServer(port) {
 
     if (req.method === 'POST' && url.pathname === '/call') {
       let body = '';
-      req.on('data', chunk => { body += chunk; });
+      req.on('data', chunk => {
+        body += chunk;
+        if (body.length > MAX_BODY_BYTES) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Request body too large (limit 20 MB).' } }));
+          req.destroy();
+        }
+      });
       req.on('end', async () => {
+        if (res.writableEnded) return;
         try {
           const payload = JSON.parse(body);
           const result = await handleToolCall(payload.name, payload.arguments);
@@ -1718,23 +2414,19 @@ function startHttpServer(port) {
 
     if (req.method === 'POST' && (url.pathname === '/mcp' || url.pathname === '/' || url.pathname === '/messages' || url.pathname === '/message')) {
       let body = '';
-      req.on('data', chunk => { body += chunk; });
+      req.on('data', chunk => {
+        body += chunk;
+        if (body.length > MAX_BODY_BYTES) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Request body too large (limit 20 MB).' } }));
+          req.destroy();
+        }
+      });
       req.on('end', async () => {
+        if (res.writableEnded) return;
+        let msg;
         try {
-          const msg = JSON.parse(body);
-          const sessionId = url.searchParams.get('sessionId') || req.headers['mcp-session-id'];
-          const response = await processJsonRpcMessage(msg);
-          const rpcLog = `[MCP-RPC] ${new Date().toISOString()} method: ${msg.method || 'unknown'} (id: ${msg.id}) -> response: ${response ? 'OK' : '204'}\n`;
-          try { fs.appendFileSync(path.join(rootDir || __dirname, 'server_requests.log'), rpcLog); } catch (e) {}
-          process.stderr.write(rpcLog);
-          if (response) {
-            sendToSse(sessionId, response);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(response));
-          } else {
-            res.writeHead(204);
-            res.end();
-          }
+          msg = JSON.parse(body);
         } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
@@ -1742,14 +2434,86 @@ function startHttpServer(port) {
             id: null,
             error: { code: -32700, message: 'Parse error: invalid JSON' }
           }));
+          return;
+        }
+
+        const sessionId = url.searchParams.get('sessionId') || req.headers['mcp-session-id'];
+        const isLegacySseSession = Boolean(sessionId && sseSessions.has(sessionId));
+
+        // Streamable HTTP: for tool calls from clients that accept SSE (e.g. Gemini),
+        // answer the POST with an event stream and send keepalive comments while the
+        // tool runs. Cloudflare drops a request after ~100s with no response bytes
+        // (HTTP 524), so a plain JSON reply to a long command would kill the call.
+        const acceptsSse = (req.headers.accept || '').includes('text/event-stream');
+        const streamReply = acceptsSse && !isLegacySseSession && msg && msg.method === 'tools/call' && msg.id !== undefined;
+
+        const startedAt = Date.now();
+        const toolName = msg && msg.method === 'tools/call' && msg.params ? msg.params.name : null;
+        let clientGone = false;
+        res.on('close', () => {
+          if (!res.writableEnded) {
+            clientGone = true;
+            appendRequestLog(`[CLIENT-ABORT] ${new Date().toISOString()} client disconnected while waiting for ${toolName ? 'tool "' + toolName + '"' : msg.method} (id: ${msg.id}) after ${fmtDuration(Date.now() - startedAt)}\n`);
+          }
+        });
+        if (msg && msg.method === 'initialize') {
+          const info = (msg.params && msg.params.clientInfo) || {};
+          appendRequestLog(`[CLIENT] ${new Date().toISOString()} initialize from ${info.name || 'unknown client'} ${info.version || ''} (protocol ${(msg.params && msg.params.protocolVersion) || '?'}; UA "${clientLabel(req)}")\n`);
+        }
+
+        let streamKeepAlive = null;
+        if (streamReply) {
+          if (req.socket) req.socket.setNoDelay(true);
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+          });
+          // Flush Cloudflare's proxy buffer so keepalives reach the client.
+          res.write(`: ${' '.repeat(2048)}\n\n`);
+          streamKeepAlive = setInterval(() => {
+            try { res.write(': keepalive\n\n'); } catch (e) { clearInterval(streamKeepAlive); }
+          }, 15000);
+          res.on('close', () => clearInterval(streamKeepAlive));
+        }
+
+        let response;
+        try {
+          response = await processJsonRpcMessage(msg);
+        } catch (err) {
+          response = msg && msg.id !== undefined
+            ? { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: `Internal error: ${err.message}` } }
+            : null;
+        }
+
+        const isErr = response && response.result && response.result.isError;
+        const status = response ? (isErr ? 'TOOL-ERROR' : 'OK') + (streamReply ? ' (sse)' : '') : '204';
+        const rpcLog = `[MCP-RPC] ${new Date().toISOString()} method: ${(msg && msg.method) || 'unknown'}${toolName ? ' "' + toolName + '"' : ''} (id: ${msg && msg.id}) -> response: ${status} in ${fmtDuration(Date.now() - startedAt)}${clientGone ? ' [client already gone]' : ''}\n`;
+        appendRequestLog(rpcLog);
+
+        if (streamReply) {
+          clearInterval(streamKeepAlive);
+          if (!res.writableEnded && !res.destroyed) {
+            res.end(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
+          }
+          return;
+        }
+
+        if (response) {
+          if (isLegacySseSession) sendToSse(sessionId, response);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(response));
+        } else {
+          res.writeHead(204);
+          res.end();
         }
       });
       return;
     }
 
     const notFound = `[404-NOT-FOUND] ${new Date().toISOString()} ${req.method} ${url.pathname}\n`;
-    try { fs.appendFileSync(path.join(rootDir || __dirname, 'server_requests.log'), notFound); } catch (e) {}
-    process.stderr.write(notFound);
+    appendRequestLog(notFound);
 
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Endpoint not found. Use /mcp' }));
