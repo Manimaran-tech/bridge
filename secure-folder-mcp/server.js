@@ -2534,8 +2534,9 @@ function startHttpServer(port) {
   server.timeout = 120000;
   server.maxHeadersCount = 2000;
 
-  server.listen(port, '127.0.0.1', () => {
-    logInfo(`Bridge MCP listening on 127.0.0.1:${port}`);
+  const listenHost = process.env.BRIDGE_HOST || '127.0.0.1';
+  server.listen(port, listenHost, () => {
+    logInfo(`Bridge MCP listening on ${listenHost}:${port}`);
   });
 }
 

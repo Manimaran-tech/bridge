@@ -16,7 +16,9 @@
   ],
   "scripts": {
     "start": "node bridge.js",
-    "test": "node secure-folder-mcp/test_client.js"
+    "test": "node secure-folder-mcp/test_client.js",
+    "test:host-binding": "node --test secure-folder-mcp/test_host_binding.js",
+    "test:docker": "node --test secure-folder-mcp/test_docker.js"
   },
   "keywords": [
     "mcp",
