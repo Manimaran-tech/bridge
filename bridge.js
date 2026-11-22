@@ -43,6 +43,9 @@ const C = {
   red: '\x1b[38;2;239;68;68m',
   redBold: '\x1b[1;38;2;239;68;68m',
 
+  // Dark tile background for the compact header icon badge
+  bgTile: '\x1b[48;2;14;18;25m',
+
   // Fallback compatibility
   neon: '\x1b[38;2;210;255;0m',
   neonBold: '\x1b[1;38;2;210;255;0m',
@@ -692,6 +695,53 @@ function switchProjectDirectory(newPath) {
   req.end();
 }
 
+// Static 16x6 half-block sprite (16x12 px) recreating the square app icon (images/bridge_icon.jpg):
+// dark rounded tile, two dark grey metallic towers, lime left cables forming a "B", and cyan right cables crossing through it.
+const BRIDGE_ICON_LINES = (() => {
+  const palette = {
+    R: [46, 53, 66],    // Rounded tile bezel
+    b: [14, 18, 25],    // Dark tile background (upper)
+    d: [10, 13, 19],    // Dark tile background (lower)
+    H: [118, 128, 146], // Tower cap highlight
+    T: [76, 84, 100],   // Dark grey tower shaft
+    P: [98, 108, 126],  // Tower pedestal base
+    L: [210, 255, 0],   // Volt lime cables + "B" (C.voltBold)
+    C: [60, 215, 255],  // Cyan cables + crossing diagonal (C.cyanBold)
+    M: [120, 238, 165], // Lime-to-cyan deck blend
+  };
+  const pixels = [
+    '..RRRRRRRRRRRR..',
+    '.RbbbbbbbbbbbbR.',
+    'RbbbHLLbbbbbbbbR',
+    'RbbbTbbLbbCHbbbR',
+    'RbbLTbLbCCbTbbbR',
+    'RbLbTbbCLbbTCbbR',
+    'RbLbTCCbLbbTbCbR',
+    'RLLLTLLLMCCTCCCR',
+    'RdddTddddddTdddR',
+    'RdddPddddddPdddR',
+    '.RddddddddddddR.',
+    '..RRRRRRRRRRRR..',
+  ];
+  const fg = (rgb) => `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
+  const bg = (rgb) => `\x1b[48;2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
+  const rows = [];
+  for (let y = 0; y < pixels.length; y += 2) {
+    let row = '';
+    for (let x = 0; x < pixels[y].length; x++) {
+      const top = pixels[y][x];
+      const bot = pixels[y + 1][x];
+      if (top === '.' && bot === '.') row += `${C.reset} `;
+      else if (top === '.') row += `${C.reset}${fg(palette[bot])}▄`;
+      else if (bot === '.') row += `${C.reset}${fg(palette[top])}▀`;
+      else if (top === bot) row += `${bg(palette[top])} `;
+      else row += `${fg(palette[top])}${bg(palette[bot])}▀`;
+    }
+    rows.push(row + C.reset);
+  }
+  return rows;
+})();
+
 function renderAsciiHeaderToOut(out, badgeText = '') {
   const barWidth = getFrameWidth();
   const thickBar = '━'.repeat(barWidth);
@@ -700,25 +750,26 @@ function renderAsciiHeaderToOut(out, badgeText = '') {
   // Small window: one-line brand header instead of the 8-line emblem.
   if (isCompact()) {
     out.push(`${C.voltBold}${thickBar}${C.reset}`);
-    const brand = `  ${C.voltBold}B R I D G E${C.reset}${badgeText ? '  ' + badgeText : ''}`;
+    const miniSprite = `${C.bgTile}${C.voltBold}B${C.cyanBold}╱${C.reset}`;
+    const brand = `  ${miniSprite} ${C.voltBold}B R I D G E${C.reset}${badgeText ? '  ' + badgeText : ''}`;
     out.push(spreadLine(brand, `${C.steel}v${CURRENT_VERSION}${C.reset}`, barWidth));
     out.push(`${C.darkDivider}${thinBar}${C.reset}`);
     return;
   }
 
   const baseLines = [
-    `${C.voltBold}██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗${C.reset}    ${C.steel}╔══════╗${C.reset}          ${C.cyan}╔══╗  ╔══╗${C.reset}`,
-    `${C.voltBold}██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝${C.reset}    ${C.steel}║ ${C.white}>_ ${C.voltBold}█${C.steel} ║${C.reset}        ${C.cyan}╔═╝  ╚══╝  ╚═╗${C.reset}`,
-    `${C.voltBold}██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗  ${C.reset}  ${C.voltBold}╔╩══════╩═╗${C.reset}     ${C.cyan}╔╝   ${C.voltBold}✦${C.cyanBold} LLM${C.cyan}    ╚╗${C.reset}`,
-    `${C.voltBold}██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝  ${C.reset}  ${C.voltBold}║    ╚════╬═════╬════╝         ║${C.reset}`,
-    `${C.voltBold}██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗${C.reset}  ${C.voltBold}╚╗    ╔═══╩═════╩═══╗         ╔╝${C.reset}`,
-    `${C.voltBold}╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝${C.reset}   ${C.voltBold}╚════╝             ╚═════════╝${C.reset}`
+    `${C.voltBold}██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗${C.reset}   ${BRIDGE_ICON_LINES[0]}`,
+    `${C.voltBold}██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝${C.reset}   ${BRIDGE_ICON_LINES[1]}`,
+    `${C.voltBold}██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗  ${C.reset}   ${BRIDGE_ICON_LINES[2]}`,
+    `${C.voltBold}██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝  ${C.reset}   ${BRIDGE_ICON_LINES[3]}`,
+    `${C.voltBold}██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗${C.reset}   ${BRIDGE_ICON_LINES[4]}`,
+    `${C.voltBold}╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝${C.reset}   ${BRIDGE_ICON_LINES[5]}`
   ];
 
   out.push(`${C.voltBold}${thickBar}${C.reset}`);
 
   // Cleanly center the iconic Bridge emblem inside the full-width frame
-  const emblemWidth = 78;
+  const emblemWidth = 63;
   const leftPad = ' '.repeat(Math.max(1, Math.floor((barWidth - emblemWidth) / 2)));
   baseLines.forEach(line => out.push(leftPad + line));
 
