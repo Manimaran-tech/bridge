@@ -1,0 +1,27 @@
+services:
+  bridge-sandbox:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?Set a strong BRIDGE_TOKEN in .env or your environment}
+      BRIDGE_HOST: 0.0.0.0
+    volumes:
+      - type: bind
+        source: ${BRIDGE_WORKSPACE:?Set BRIDGE_WORKSPACE to an existing project directory}
+        target: /workspace
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m,mode=1777
+      - /home/node:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: 1.5
+    mem_limit: 1g
+    pids_limit: 256

@@ -1,0 +1,6 @@
+# Allow only runtime sources into the build context; never send workspace data or secrets.
+**
+!Dockerfile
+!package.json
+!secure-folder-mcp/
+!secure-folder-mcp/server.js
