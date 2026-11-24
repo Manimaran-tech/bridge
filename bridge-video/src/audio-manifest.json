@@ -1,0 +1,1500 @@
+{
+  "fps": 30,
+  "transitionFrames": 12,
+  "totalFrames": 2697,
+  "totalSeconds": 89.9,
+  "voice": "en-US-AndrewNeural (1.30x reel-paced)",
+  "scenes": [
+    {
+      "id": "scene1_pain",
+      "title": "Hook & Copy-Paste Error Loop",
+      "audioFile": "audio/scene1_pain.mp3",
+      "leadPadFrames": 4,
+      "speechDurationMs": 18991.0,
+      "durationFrames": 584,
+      "text": "Still zipping your whole project and uploading it to web chat just to fix one bug? You wait for the answer, copy the snippet, paste it into VS Code, and run your tests. Boom. Broken import. So you copy that error, paste it back into chat, copy the new fix, and paste it again. Still failing. Upload, copy, paste, crash, repeat. Stuck in an endless copy-paste loop.",
+      "words": [
+        {
+          "text": "Still",
+          "startMs": 85.5,
+          "endMs": 323.1
+        },
+        {
+          "text": "zipping",
+          "startMs": 332.7,
+          "endMs": 589.3
+        },
+        {
+          "text": "your",
+          "startMs": 598.8,
+          "endMs": 684.3
+        },
+        {
+          "text": "whole",
+          "startMs": 693.8,
+          "endMs": 817.4
+        },
+        {
+          "text": "project",
+          "startMs": 826.9,
+          "endMs": 1216.6
+        },
+        {
+          "text": "and",
+          "startMs": 1501.7,
+          "endMs": 1587.2
+        },
+        {
+          "text": "uploading",
+          "startMs": 1596.7,
+          "endMs": 1919.9
+        },
+        {
+          "text": "it",
+          "startMs": 1929.5,
+          "endMs": 1986.4
+        },
+        {
+          "text": "to",
+          "startMs": 1995.9,
+          "endMs": 2062.5
+        },
+        {
+          "text": "web",
+          "startMs": 2072.0,
+          "endMs": 2262.1
+        },
+        {
+          "text": "chat",
+          "startMs": 2271.6,
+          "endMs": 2528.2
+        },
+        {
+          "text": "just",
+          "startMs": 2689.7,
+          "endMs": 2832.3
+        },
+        {
+          "text": "to",
+          "startMs": 2841.9,
+          "endMs": 2879.9
+        },
+        {
+          "text": "fix",
+          "startMs": 2889.4,
+          "endMs": 3051.0
+        },
+        {
+          "text": "one",
+          "startMs": 3060.5,
+          "endMs": 3174.5
+        },
+        {
+          "text": "bug",
+          "startMs": 3184.1,
+          "endMs": 3421.6
+        },
+        {
+          "text": "You",
+          "startMs": 3744.8,
+          "endMs": 3811.3
+        },
+        {
+          "text": "wait",
+          "startMs": 3820.9,
+          "endMs": 3944.4
+        },
+        {
+          "text": "for",
+          "startMs": 3953.9,
+          "endMs": 4029.9
+        },
+        {
+          "text": "the",
+          "startMs": 4039.4,
+          "endMs": 4115.5
+        },
+        {
+          "text": "answer",
+          "startMs": 4125.0,
+          "endMs": 4448.2
+        },
+        {
+          "text": "copy",
+          "startMs": 4619.2,
+          "endMs": 4875.8
+        },
+        {
+          "text": "the",
+          "startMs": 4885.3,
+          "endMs": 4951.9
+        },
+        {
+          "text": "snippet",
+          "startMs": 4961.4,
+          "endMs": 5294.0
+        },
+        {
+          "text": "paste",
+          "startMs": 5569.7,
+          "endMs": 5797.8
+        },
+        {
+          "text": "it",
+          "startMs": 5807.3,
+          "endMs": 5854.9
+        },
+        {
+          "text": "into",
+          "startMs": 5864.4,
+          "endMs": 6082.9
+        },
+        {
+          "text": "VS",
+          "startMs": 6092.5,
+          "endMs": 6444.1
+        },
+        {
+          "text": "Code",
+          "startMs": 6453.6,
+          "endMs": 6748.3
+        },
+        {
+          "text": "and",
+          "startMs": 6985.9,
+          "endMs": 7080.9
+        },
+        {
+          "text": "run",
+          "startMs": 7090.4,
+          "endMs": 7214.0
+        },
+        {
+          "text": "your",
+          "startMs": 7223.4,
+          "endMs": 7309.0
+        },
+        {
+          "text": "tests",
+          "startMs": 7318.5,
+          "endMs": 7755.8
+        },
+        {
+          "text": "Boom",
+          "startMs": 8078.9,
+          "endMs": 8297.5
+        },
+        {
+          "text": "Broken",
+          "startMs": 8620.7,
+          "endMs": 8791.7
+        },
+        {
+          "text": "import",
+          "startMs": 8801.2,
+          "endMs": 9105.4
+        },
+        {
+          "text": "So",
+          "startMs": 9428.5,
+          "endMs": 9514.0
+        },
+        {
+          "text": "you",
+          "startMs": 9523.5,
+          "endMs": 9609.1
+        },
+        {
+          "text": "copy",
+          "startMs": 9618.7,
+          "endMs": 9846.7
+        },
+        {
+          "text": "that",
+          "startMs": 9856.3,
+          "endMs": 9979.8
+        },
+        {
+          "text": "error",
+          "startMs": 9989.3,
+          "endMs": 10207.9
+        },
+        {
+          "text": "paste",
+          "startMs": 10398.0,
+          "endMs": 10607.1
+        },
+        {
+          "text": "it",
+          "startMs": 10616.6,
+          "endMs": 10683.1
+        },
+        {
+          "text": "back",
+          "startMs": 10692.6,
+          "endMs": 10892.2
+        },
+        {
+          "text": "into",
+          "startMs": 10901.8,
+          "endMs": 11006.3
+        },
+        {
+          "text": "chat",
+          "startMs": 11015.8,
+          "endMs": 11348.5
+        },
+        {
+          "text": "copy",
+          "startMs": 11538.5,
+          "endMs": 11785.6
+        },
+        {
+          "text": "the",
+          "startMs": 11795.1,
+          "endMs": 11852.2
+        },
+        {
+          "text": "new",
+          "startMs": 11861.7,
+          "endMs": 11975.8
+        },
+        {
+          "text": "fix",
+          "startMs": 11985.3,
+          "endMs": 12365.5
+        },
+        {
+          "text": "and",
+          "startMs": 12527.1,
+          "endMs": 12603.1
+        },
+        {
+          "text": "paste",
+          "startMs": 12612.6,
+          "endMs": 12850.2
+        },
+        {
+          "text": "it",
+          "startMs": 12859.7,
+          "endMs": 12897.7
+        },
+        {
+          "text": "again",
+          "startMs": 12907.2,
+          "endMs": 13154.3
+        },
+        {
+          "text": "Still",
+          "startMs": 13468.0,
+          "endMs": 13648.6
+        },
+        {
+          "text": "failing",
+          "startMs": 13658.1,
+          "endMs": 13962.2
+        },
+        {
+          "text": "Upload",
+          "startMs": 14275.8,
+          "endMs": 14627.5
+        },
+        {
+          "text": "copy",
+          "startMs": 14808.1,
+          "endMs": 15150.3
+        },
+        {
+          "text": "paste",
+          "startMs": 15330.8,
+          "endMs": 15720.5
+        },
+        {
+          "text": "crash",
+          "startMs": 15872.6,
+          "endMs": 16309.9
+        },
+        {
+          "text": "repeat",
+          "startMs": 16433.4,
+          "endMs": 16785.1
+        },
+        {
+          "text": "Stuck",
+          "startMs": 17108.2,
+          "endMs": 17364.8
+        },
+        {
+          "text": "in",
+          "startMs": 17412.4,
+          "endMs": 17469.4
+        },
+        {
+          "text": "an",
+          "startMs": 17478.9,
+          "endMs": 17564.5
+        },
+        {
+          "text": "endless",
+          "startMs": 17688.0,
+          "endMs": 17906.6
+        },
+        {
+          "text": "copy-paste",
+          "startMs": 17916.1,
+          "endMs": 18457.9
+        },
+        {
+          "text": "loop",
+          "startMs": 18467.4,
+          "endMs": 18676.5
+        }
+      ],
+      "startFrame": 0
+    },
+    {
+      "id": "scene2_reveal",
+      "title": "Meet Bridge",
+      "audioFile": "audio/scene2_reveal.mp3",
+      "leadPadFrames": 4,
+      "speechDurationMs": 9012.2,
+      "durationFrames": 285,
+      "text": "Stop acting like a human clipboard. Meet Bridge, the open-source local-to-web AI harness that connects your real codebase directly to Gemini, ChatGPT, Claude, and DeepSeek.",
+      "words": [
+        {
+          "text": "Stop",
+          "startMs": 85.5,
+          "endMs": 294.6
+        },
+        {
+          "text": "acting",
+          "startMs": 304.2,
+          "endMs": 541.8
+        },
+        {
+          "text": "like",
+          "startMs": 551.4,
+          "endMs": 665.4
+        },
+        {
+          "text": "a",
+          "startMs": 674.8,
+          "endMs": 703.4
+        },
+        {
+          "text": "human",
+          "startMs": 712.9,
+          "endMs": 941.0
+        },
+        {
+          "text": "clipboard",
+          "startMs": 950.5,
+          "endMs": 1330.8
+        },
+        {
+          "text": "Meet",
+          "startMs": 1644.5,
+          "endMs": 1825.0
+        },
+        {
+          "text": "Bridge",
+          "startMs": 1834.6,
+          "endMs": 2205.3
+        },
+        {
+          "text": "the",
+          "startMs": 2357.4,
+          "endMs": 2443.0
+        },
+        {
+          "text": "open-source",
+          "startMs": 2452.5,
+          "endMs": 2927.7
+        },
+        {
+          "text": "local-to-web",
+          "startMs": 2937.2,
+          "endMs": 3498.0
+        },
+        {
+          "text": "AI",
+          "startMs": 3574.1,
+          "endMs": 3802.2
+        },
+        {
+          "text": "harness",
+          "startMs": 3811.8,
+          "endMs": 4144.4
+        },
+        {
+          "text": "that",
+          "startMs": 4153.9,
+          "endMs": 4239.5
+        },
+        {
+          "text": "connects",
+          "startMs": 4249.0,
+          "endMs": 4553.2
+        },
+        {
+          "text": "your",
+          "startMs": 4562.7,
+          "endMs": 4705.2
+        },
+        {
+          "text": "real",
+          "startMs": 4714.7,
+          "endMs": 4914.4
+        },
+        {
+          "text": "codebase",
+          "startMs": 4923.9,
+          "endMs": 5313.6
+        },
+        {
+          "text": "directly",
+          "startMs": 5323.1,
+          "endMs": 5779.4
+        },
+        {
+          "text": "to",
+          "startMs": 5826.9,
+          "endMs": 5912.5
+        },
+        {
+          "text": "Gemini",
+          "startMs": 5922.0,
+          "endMs": 6368.8
+        },
+        {
+          "text": "ChatGPT",
+          "startMs": 6596.9,
+          "endMs": 7328.8
+        },
+        {
+          "text": "Claude",
+          "startMs": 7547.4,
+          "endMs": 7918.1
+        },
+        {
+          "text": "and",
+          "startMs": 8146.2,
+          "endMs": 8222.3
+        },
+        {
+          "text": "DeepSeek",
+          "startMs": 8231.8,
+          "endMs": 8697.6
+        }
+      ],
+      "startFrame": 572
+    },
+    {
+      "id": "scene3_install",
+      "title": "10-Second Installation Guide",
+      "audioFile": "audio/scene3_install.mp3",
+      "leadPadFrames": 4,
+      "speechDurationMs": 10579.6,
+      "durationFrames": 332,
+      "text": "Getting started takes ten seconds. Install it globally with npm install dash g, at markmayandi slash bridge, or launch instantly with zero install using npx. No JSON configs, no port forwarding.",
+      "words": [
+        {
+          "text": "Getting",
+          "startMs": 75.9,
+          "endMs": 218.4
+        },
+        {
+          "text": "started",
+          "startMs": 227.9,
+          "endMs": 503.2
+        },
+        {
+          "text": "takes",
+          "startMs": 512.7,
+          "endMs": 740.6
+        },
+        {
+          "text": "ten",
+          "startMs": 750.1,
+          "endMs": 921.0
+        },
+        {
+          "text": "seconds",
+          "startMs": 930.5,
+          "endMs": 1376.8
+        },
+        {
+          "text": "Install",
+          "startMs": 1690.0,
+          "endMs": 2022.4
+        },
+        {
+          "text": "it",
+          "startMs": 2031.9,
+          "endMs": 2107.9
+        },
+        {
+          "text": "globally",
+          "startMs": 2117.4,
+          "endMs": 2525.7
+        },
+        {
+          "text": "with",
+          "startMs": 2535.2,
+          "endMs": 2677.6
+        },
+        {
+          "text": "npm",
+          "startMs": 2772.5,
+          "endMs": 3133.3
+        },
+        {
+          "text": "install",
+          "startMs": 3142.8,
+          "endMs": 3475.1
+        },
+        {
+          "text": "-g",
+          "startMs": 3484.6,
+          "endMs": 4044.8
+        },
+        {
+          "text": "@markmayandi/bridge",
+          "startMs": 4282.2,
+          "endMs": 5516.5
+        },
+        {
+          "text": "or",
+          "startMs": 5744.4,
+          "endMs": 5839.3
+        },
+        {
+          "text": "launch",
+          "startMs": 5848.9,
+          "endMs": 6086.3
+        },
+        {
+          "text": "instantly",
+          "startMs": 6152.7,
+          "endMs": 6532.5
+        },
+        {
+          "text": "with",
+          "startMs": 6542.0,
+          "endMs": 6655.9
+        },
+        {
+          "text": "zero",
+          "startMs": 6665.4,
+          "endMs": 6969.3
+        },
+        {
+          "text": "install",
+          "startMs": 6978.8,
+          "endMs": 7339.6
+        },
+        {
+          "text": "using",
+          "startMs": 7349.1,
+          "endMs": 7605.5
+        },
+        {
+          "text": "npx",
+          "startMs": 7614.9,
+          "endMs": 8099.2
+        },
+        {
+          "text": "No",
+          "startMs": 8412.5,
+          "endMs": 8564.4
+        },
+        {
+          "text": "JSON",
+          "startMs": 8573.9,
+          "endMs": 8934.7
+        },
+        {
+          "text": "configs",
+          "startMs": 8944.2,
+          "endMs": 9438.0
+        },
+        {
+          "text": "no",
+          "startMs": 9589.9,
+          "endMs": 9722.8
+        },
+        {
+          "text": "port",
+          "startMs": 9732.2,
+          "endMs": 9931.7
+        },
+        {
+          "text": "forwarding",
+          "startMs": 9941.2,
+          "endMs": 10273.6
+        }
+      ],
+      "startFrame": 845
+    },
+    {
+      "id": "scene4_terminal",
+      "title": "Terminal cd & Instant Tunnel",
+      "audioFile": "audio/scene4_terminal.mp3",
+      "leadPadFrames": 4,
+      "speechDurationMs": 10971.4,
+      "durationFrames": 344,
+      "text": "Open your terminal, c d into your project directory, and run bridge dot. In two seconds, Bridge strictly jails that folder, spins up an encrypted Cloudflare Anycast tunnel, and copies your live MCP link straight to your clipboard.",
+      "words": [
+        {
+          "text": "Open",
+          "startMs": 75.9,
+          "endMs": 237.2
+        },
+        {
+          "text": "your",
+          "startMs": 246.7,
+          "endMs": 341.6
+        },
+        {
+          "text": "terminal",
+          "startMs": 351.0,
+          "endMs": 711.7
+        },
+        {
+          "text": "cd",
+          "startMs": 996.3,
+          "endMs": 1318.8
+        },
+        {
+          "text": "into",
+          "startMs": 1328.4,
+          "endMs": 1480.1
+        },
+        {
+          "text": "your",
+          "startMs": 1489.6,
+          "endMs": 1575.0
+        },
+        {
+          "text": "project",
+          "startMs": 1584.5,
+          "endMs": 1897.6
+        },
+        {
+          "text": "directory",
+          "startMs": 1907.1,
+          "endMs": 2362.5
+        },
+        {
+          "text": "and",
+          "startMs": 2552.3,
+          "endMs": 2637.7
+        },
+        {
+          "text": "run",
+          "startMs": 2647.2,
+          "endMs": 2799.0
+        },
+        {
+          "text": "bridge .",
+          "startMs": 2808.5,
+          "endMs": 3178.6
+        },
+        {
+          "text": "In",
+          "startMs": 3491.6,
+          "endMs": 3567.6
+        },
+        {
+          "text": "two",
+          "startMs": 3577.1,
+          "endMs": 3728.8
+        },
+        {
+          "text": "seconds",
+          "startMs": 3738.3,
+          "endMs": 4155.8
+        },
+        {
+          "text": "Bridge",
+          "startMs": 4336.1,
+          "endMs": 4611.3
+        },
+        {
+          "text": "strictly",
+          "startMs": 4620.7,
+          "endMs": 4962.4
+        },
+        {
+          "text": "jails",
+          "startMs": 4971.8,
+          "endMs": 5256.4
+        },
+        {
+          "text": "that",
+          "startMs": 5265.9,
+          "endMs": 5370.3
+        },
+        {
+          "text": "folder",
+          "startMs": 5379.8,
+          "endMs": 5730.9
+        },
+        {
+          "text": "spins",
+          "startMs": 5949.1,
+          "endMs": 6224.3
+        },
+        {
+          "text": "up",
+          "startMs": 6233.7,
+          "endMs": 6338.0
+        },
+        {
+          "text": "an",
+          "startMs": 6366.6,
+          "endMs": 6423.5
+        },
+        {
+          "text": "encrypted",
+          "startMs": 6433.0,
+          "endMs": 6860.0
+        },
+        {
+          "text": "Cloudflare",
+          "startMs": 6869.5,
+          "endMs": 7372.4
+        },
+        {
+          "text": "Anycast",
+          "startMs": 7476.7,
+          "endMs": 7875.2
+        },
+        {
+          "text": "tunnel",
+          "startMs": 7884.6,
+          "endMs": 8131.3
+        },
+        {
+          "text": "and",
+          "startMs": 8416.0,
+          "endMs": 8463.5
+        },
+        {
+          "text": "copies",
+          "startMs": 8473.0,
+          "endMs": 8824.0
+        },
+        {
+          "text": "your",
+          "startMs": 8833.5,
+          "endMs": 8909.4
+        },
+        {
+          "text": "live",
+          "startMs": 8918.9,
+          "endMs": 9194.0
+        },
+        {
+          "text": "MCP",
+          "startMs": 9203.5,
+          "endMs": 9592.6
+        },
+        {
+          "text": "link",
+          "startMs": 9602.1,
+          "endMs": 9810.8
+        },
+        {
+          "text": "straight",
+          "startMs": 9820.3,
+          "endMs": 10085.9
+        },
+        {
+          "text": "to",
+          "startMs": 10095.4,
+          "endMs": 10161.8
+        },
+        {
+          "text": "your",
+          "startMs": 10171.3,
+          "endMs": 10256.7
+        },
+        {
+          "text": "clipboard",
+          "startMs": 10266.2,
+          "endMs": 10636.2
+        }
+      ],
+      "startFrame": 1165
+    },
+    {
+      "id": "scene5_connect",
+      "title": "Connect Custom MCP",
+      "audioFile": "audio/scene5_connect.mp3",
+      "leadPadFrames": 4,
+      "speechDurationMs": 10292.2,
+      "durationFrames": 323,
+      "text": "Now swap back to your web chat. Open Connectors, hit Connect MCP, create a custom connector named Bridge, paste your live URL, and click connect. Twenty-four sandboxed local tools come online immediately.",
+      "words": [
+        {
+          "text": "Now",
+          "startMs": 76.2,
+          "endMs": 180.9
+        },
+        {
+          "text": "swap",
+          "startMs": 190.4,
+          "endMs": 428.5
+        },
+        {
+          "text": "back",
+          "startMs": 438.1,
+          "endMs": 600.0
+        },
+        {
+          "text": "to",
+          "startMs": 609.5,
+          "endMs": 676.1
+        },
+        {
+          "text": "your",
+          "startMs": 685.7,
+          "endMs": 761.9
+        },
+        {
+          "text": "web",
+          "startMs": 771.4,
+          "endMs": 904.8
+        },
+        {
+          "text": "chat",
+          "startMs": 914.3,
+          "endMs": 1171.4
+        },
+        {
+          "text": "Open",
+          "startMs": 1485.7,
+          "endMs": 1676.2
+        },
+        {
+          "text": "Connectors",
+          "startMs": 1685.6,
+          "endMs": 2171.4
+        },
+        {
+          "text": "hit",
+          "startMs": 2333.4,
+          "endMs": 2485.7
+        },
+        {
+          "text": "Connect",
+          "startMs": 2495.2,
+          "endMs": 2819.0
+        },
+        {
+          "text": "MCP",
+          "startMs": 2857.2,
+          "endMs": 3323.8
+        },
+        {
+          "text": "create",
+          "startMs": 3599.9,
+          "endMs": 3857.2
+        },
+        {
+          "text": "a",
+          "startMs": 3866.7,
+          "endMs": 3914.3
+        },
+        {
+          "text": "custom",
+          "startMs": 3923.8,
+          "endMs": 4276.1
+        },
+        {
+          "text": "connector",
+          "startMs": 4285.7,
+          "endMs": 4628.5
+        },
+        {
+          "text": "named",
+          "startMs": 4638.0,
+          "endMs": 4866.6
+        },
+        {
+          "text": "Bridge",
+          "startMs": 4876.2,
+          "endMs": 5247.6
+        },
+        {
+          "text": "paste",
+          "startMs": 5466.6,
+          "endMs": 5685.7
+        },
+        {
+          "text": "your",
+          "startMs": 5695.2,
+          "endMs": 5761.8
+        },
+        {
+          "text": "live",
+          "startMs": 5771.4,
+          "endMs": 5942.8
+        },
+        {
+          "text": "URL",
+          "startMs": 5952.3,
+          "endMs": 6371.4
+        },
+        {
+          "text": "and",
+          "startMs": 6580.9,
+          "endMs": 6628.5
+        },
+        {
+          "text": "click",
+          "startMs": 6638.0,
+          "endMs": 6809.5
+        },
+        {
+          "text": "connect",
+          "startMs": 6819.0,
+          "endMs": 7152.4
+        },
+        {
+          "text": "24",
+          "startMs": 7466.6,
+          "endMs": 7790.4
+        },
+        {
+          "text": "sandboxed",
+          "startMs": 7799.9,
+          "endMs": 8295.1
+        },
+        {
+          "text": "local",
+          "startMs": 8304.7,
+          "endMs": 8542.8
+        },
+        {
+          "text": "tools",
+          "startMs": 8552.3,
+          "endMs": 8809.4
+        },
+        {
+          "text": "come",
+          "startMs": 8819.0,
+          "endMs": 8980.8
+        },
+        {
+          "text": "online",
+          "startMs": 9066.6,
+          "endMs": 9466.6
+        },
+        {
+          "text": "immediately",
+          "startMs": 9514.2,
+          "endMs": 10009.5
+        }
+      ],
+      "startFrame": 1497
+    },
+    {
+      "id": "scene6_mention",
+      "title": "@Bridge Call & Permission Control",
+      "audioFile": "audio/scene6_mention.mp3",
+      "leadPadFrames": 4,
+      "speechDurationMs": 9822.0,
+      "durationFrames": 309,
+      "text": "Back in the chat, just type at Bridge and give your command. Before touching a single file on disk, the model asks for your permission. You stay in total control. Inspect the exact tool call, and click allow.",
+      "words": [
+        {
+          "text": "Back",
+          "startMs": 85.6,
+          "endMs": 237.9
+        },
+        {
+          "text": "in",
+          "startMs": 247.4,
+          "endMs": 285.4
+        },
+        {
+          "text": "the",
+          "startMs": 295.0,
+          "endMs": 342.5
+        },
+        {
+          "text": "chat",
+          "startMs": 352.0,
+          "endMs": 666.1
+        },
+        {
+          "text": "just",
+          "startMs": 894.4,
+          "endMs": 1065.7
+        },
+        {
+          "text": "type",
+          "startMs": 1075.1,
+          "endMs": 1236.9
+        },
+        {
+          "text": "@Bridge",
+          "startMs": 1246.4,
+          "endMs": 1646.1
+        },
+        {
+          "text": "and",
+          "startMs": 1788.8,
+          "endMs": 1845.9
+        },
+        {
+          "text": "give",
+          "startMs": 1855.4,
+          "endMs": 1998.1
+        },
+        {
+          "text": "your",
+          "startMs": 2007.6,
+          "endMs": 2083.7
+        },
+        {
+          "text": "command",
+          "startMs": 2093.2,
+          "endMs": 2435.8
+        },
+        {
+          "text": "Before",
+          "startMs": 2749.8,
+          "endMs": 2978.1
+        },
+        {
+          "text": "touching",
+          "startMs": 2987.6,
+          "endMs": 3320.7
+        },
+        {
+          "text": "a",
+          "startMs": 3377.8,
+          "endMs": 3415.8
+        },
+        {
+          "text": "single",
+          "startMs": 3425.4,
+          "endMs": 3748.8
+        },
+        {
+          "text": "file",
+          "startMs": 3758.4,
+          "endMs": 4072.4
+        },
+        {
+          "text": "on",
+          "startMs": 4081.9,
+          "endMs": 4167.5
+        },
+        {
+          "text": "disk",
+          "startMs": 4177.0,
+          "endMs": 4519.6
+        },
+        {
+          "text": "the",
+          "startMs": 4728.9,
+          "endMs": 4795.5
+        },
+        {
+          "text": "model",
+          "startMs": 4805.0,
+          "endMs": 5109.5
+        },
+        {
+          "text": "asks",
+          "startMs": 5119.0,
+          "endMs": 5356.8
+        },
+        {
+          "text": "for",
+          "startMs": 5366.4,
+          "endMs": 5461.6
+        },
+        {
+          "text": "your",
+          "startMs": 5471.1,
+          "endMs": 5556.7
+        },
+        {
+          "text": "permission",
+          "startMs": 5566.2,
+          "endMs": 5946.8
+        },
+        {
+          "text": "You",
+          "startMs": 6260.8,
+          "endMs": 6327.4
+        },
+        {
+          "text": "stay",
+          "startMs": 6336.9,
+          "endMs": 6527.2
+        },
+        {
+          "text": "in",
+          "startMs": 6536.7,
+          "endMs": 6612.8
+        },
+        {
+          "text": "total",
+          "startMs": 6622.3,
+          "endMs": 6841.1
+        },
+        {
+          "text": "control",
+          "startMs": 6850.7,
+          "endMs": 7212.3
+        },
+        {
+          "text": "Inspect",
+          "startMs": 7526.2,
+          "endMs": 7859.3
+        },
+        {
+          "text": "the",
+          "startMs": 7868.8,
+          "endMs": 7916.4
+        },
+        {
+          "text": "exact",
+          "startMs": 7925.9,
+          "endMs": 8306.5
+        },
+        {
+          "text": "tool",
+          "startMs": 8316.0,
+          "endMs": 8506.3
+        },
+        {
+          "text": "call",
+          "startMs": 8515.8,
+          "endMs": 8820.3
+        },
+        {
+          "text": "and",
+          "startMs": 9039.1,
+          "endMs": 9086.7
+        },
+        {
+          "text": "click",
+          "startMs": 9096.2,
+          "endMs": 9257.9
+        },
+        {
+          "text": "allow",
+          "startMs": 9267.4,
+          "endMs": 9514.8
+        }
+      ],
+      "startFrame": 1808
+    },
+    {
+      "id": "scene7_execution",
+      "title": "Live Read, Write & Local Tests",
+      "audioFile": "audio/scene7_execution.mp3",
+      "leadPadFrames": 4,
+      "speechDurationMs": 11102.0,
+      "durationFrames": 348,
+      "text": "Watch Bridge execute in real time. The model reads todo logic dot j s, writes a clean surgical patch directly to disk, and runs node test live on your machine. Seven out of seven tests passing, with zero copy-pasting.",
+      "words": [
+        {
+          "text": "Watch",
+          "startMs": 85.4,
+          "endMs": 275.3
+        },
+        {
+          "text": "Bridge",
+          "startMs": 284.8,
+          "endMs": 541.1
+        },
+        {
+          "text": "execute",
+          "startMs": 550.6,
+          "endMs": 930.2
+        },
+        {
+          "text": "in",
+          "startMs": 1015.6,
+          "endMs": 1120.0
+        },
+        {
+          "text": "real",
+          "startMs": 1129.5,
+          "endMs": 1290.8
+        },
+        {
+          "text": "time",
+          "startMs": 1300.4,
+          "endMs": 1575.7
+        },
+        {
+          "text": "The",
+          "startMs": 1888.9,
+          "endMs": 1945.9
+        },
+        {
+          "text": "model",
+          "startMs": 1955.3,
+          "endMs": 2230.6
+        },
+        {
+          "text": "reads",
+          "startMs": 2240.1,
+          "endMs": 2439.4
+        },
+        {
+          "text": "todo-logic.js,",
+          "startMs": 2449.0,
+          "endMs": 3891.7
+        },
+        {
+          "text": "writes",
+          "startMs": 4119.5,
+          "endMs": 4290.4
+        },
+        {
+          "text": "a",
+          "startMs": 4299.9,
+          "endMs": 4347.4
+        },
+        {
+          "text": "clean",
+          "startMs": 4356.9,
+          "endMs": 4613.1
+        },
+        {
+          "text": "surgical",
+          "startMs": 4622.6,
+          "endMs": 4983.3
+        },
+        {
+          "text": "patch",
+          "startMs": 4992.7,
+          "endMs": 5277.5
+        },
+        {
+          "text": "directly",
+          "startMs": 5287.0,
+          "endMs": 5657.2
+        },
+        {
+          "text": "to",
+          "startMs": 5666.7,
+          "endMs": 5723.6
+        },
+        {
+          "text": "disk",
+          "startMs": 5733.1,
+          "endMs": 6046.4
+        },
+        {
+          "text": "and",
+          "startMs": 6331.2,
+          "endMs": 6416.6
+        },
+        {
+          "text": "runs",
+          "startMs": 6426.1,
+          "endMs": 6634.9
+        },
+        {
+          "text": "node",
+          "startMs": 6644.4,
+          "endMs": 6881.7
+        },
+        {
+          "text": "test",
+          "startMs": 6938.6,
+          "endMs": 7166.4
+        },
+        {
+          "text": "live",
+          "startMs": 7175.9,
+          "endMs": 7375.2
+        },
+        {
+          "text": "on",
+          "startMs": 7384.7,
+          "endMs": 7460.7
+        },
+        {
+          "text": "your",
+          "startMs": 7470.2,
+          "endMs": 7546.1
+        },
+        {
+          "text": "machine",
+          "startMs": 7555.6,
+          "endMs": 7840.4
+        },
+        {
+          "text": "Seven",
+          "startMs": 8153.6,
+          "endMs": 8390.9
+        },
+        {
+          "text": "out",
+          "startMs": 8400.4,
+          "endMs": 8504.8
+        },
+        {
+          "text": "of",
+          "startMs": 8514.3,
+          "endMs": 8580.8
+        },
+        {
+          "text": "seven",
+          "startMs": 8590.3,
+          "endMs": 8903.4
+        },
+        {
+          "text": "tests",
+          "startMs": 8912.9,
+          "endMs": 9169.2
+        },
+        {
+          "text": "passing",
+          "startMs": 9178.7,
+          "endMs": 9586.9
+        },
+        {
+          "text": "with",
+          "startMs": 9767.2,
+          "endMs": 9890.6
+        },
+        {
+          "text": "zero",
+          "startMs": 9900.1,
+          "endMs": 10184.9
+        },
+        {
+          "text": "copy-pasting",
+          "startMs": 10194.4,
+          "endMs": 10792.3
+        }
+      ],
+      "startFrame": 2105
+    },
+    {
+      "id": "scene8_outro",
+      "title": "Launch CTA",
+      "audioFile": "audio/scene8_outro.mp3",
+      "leadPadFrames": 4,
+      "speechDurationMs": 7235.9,
+      "durationFrames": 256,
+      "text": "Stop copy-pasting code in twenty twenty-six. Try Bridge today with one npx command. Free, strictly jailed, and open source on GitHub.",
+      "words": [
+        {
+          "text": "Stop",
+          "startMs": 75.9,
+          "endMs": 313.3
+        },
+        {
+          "text": "copy-pasting",
+          "startMs": 322.9,
+          "endMs": 911.6
+        },
+        {
+          "text": "code",
+          "startMs": 921.1,
+          "endMs": 1177.5
+        },
+        {
+          "text": "in",
+          "startMs": 1186.9,
+          "endMs": 1262.9
+        },
+        {
+          "text": "2026.",
+          "startMs": 1272.4,
+          "endMs": 2032.1
+        },
+        {
+          "text": "Try",
+          "startMs": 2345.5,
+          "endMs": 2506.8
+        },
+        {
+          "text": "Bridge",
+          "startMs": 2516.4,
+          "endMs": 2744.2
+        },
+        {
+          "text": "today",
+          "startMs": 2753.7,
+          "endMs": 3029.1
+        },
+        {
+          "text": "with",
+          "startMs": 3038.6,
+          "endMs": 3162.1
+        },
+        {
+          "text": "one",
+          "startMs": 3171.6,
+          "endMs": 3465.9
+        },
+        {
+          "text": "npx",
+          "startMs": 3589.3,
+          "endMs": 3931.2
+        },
+        {
+          "text": "command",
+          "startMs": 3940.7,
+          "endMs": 4292.1
+        },
+        {
+          "text": "Free",
+          "startMs": 4643.4,
+          "endMs": 4861.8
+        },
+        {
+          "text": "strictly",
+          "startMs": 5042.2,
+          "endMs": 5355.6
+        },
+        {
+          "text": "jailed",
+          "startMs": 5365.1,
+          "endMs": 5716.4
+        },
+        {
+          "text": "and",
+          "startMs": 5906.3,
+          "endMs": 6039.2
+        },
+        {
+          "text": "open",
+          "startMs": 6048.7,
+          "endMs": 6257.6
+        },
+        {
+          "text": "source",
+          "startMs": 6267.1,
+          "endMs": 6504.5
+        },
+        {
+          "text": "on",
+          "startMs": 6514.0,
+          "endMs": 6599.5
+        },
+        {
+          "text": "GitHub",
+          "startMs": 6608.9,
+          "endMs": 6931.8
+        }
+      ],
+      "startFrame": 2441
+    }
+  ]
+}

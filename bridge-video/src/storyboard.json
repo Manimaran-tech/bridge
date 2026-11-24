@@ -1,0 +1,480 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "project": {
+    "title": "Bridge — Universal Local-to-Web AI Coding Harness Promo",
+    "format": "Vertical Tech Reel (9:16)",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationInSeconds": 90,
+    "totalFrames": 2700,
+    "aspectRatio": "9:16",
+    "theme": {
+      "palette": {
+        "primaryVolt": "#D2FF00",
+        "primaryVoltLight": "#E5FF4D",
+        "primaryVoltDark": "#98B800",
+        "secondaryCyan": "#50C8FF",
+        "secondaryCyanGlow": "#00A2FF",
+        "bgCanvas": "#0B0C0E",
+        "surfaceCard": "#141720",
+        "surfaceElevated": "#1C202C",
+        "borderMuted": "#272C3A",
+        "borderVolt": "#D2FF00",
+        "textHeading": "#FFFFFF",
+        "textBody": "#C6CAD6",
+        "textMuted": "#8E92A4",
+        "textSteel": "#484D5E",
+        "errorRed": "#EF4444",
+        "errorBg": "#2B1114",
+        "successGreen": "#10B981",
+        "successBg": "#0E241B"
+      },
+      "typography": {
+        "display": "Inter, -apple-system, sans-serif",
+        "mono": "'JetBrains Mono', 'Fira Code', Consolas, monospace"
+      }
+    }
+  },
+  "scenes": [
+    {
+      "id": "scene-1-pain",
+      "index": 1,
+      "title": "Hook & The Copy-Paste Hell",
+      "timeRange": "00:00 - 00:20",
+      "from": 0,
+      "to": 600,
+      "durationInFrames": 600,
+      "voiceover": "Be honest: how much time do you waste uploading code files to web AI chats, waiting for an answer, copy-pasting it back into your editor, and hitting immediate syntax errors? You copy the error, paste it back to the AI, get another half-baked snippet... and repeat this loop ten times in pure frustration. Stop copy-pasting code!",
+      "acts": [
+        {
+          "actId": "act-1-1-upload",
+          "from": 0,
+          "to": 150,
+          "durationInFrames": 150,
+          "headline": "THE 2026 DEVELOPER REALITY",
+          "visual": {
+            "type": "IDE_AND_CHAT_SPLIT",
+            "description": "Developer coding inside VS Code. File `auth-service.ts` has a nasty undefined error on line 42. Mouse cursor grabs `auth-service.ts` tab and drags it across into a Web AI chat prompt (Claude / ChatGPT style).",
+            "fileIcon": "auth-service.ts",
+            "dragAnimation": "Cursor moves smoothly from (x: 280, y: 520) to (x: 540, y: 1350) with drag ghost chip.",
+            "promptText": "Fix this authentication error and verify tests..."
+          },
+          "sfx": [
+            { "frame": 10, "type": "mouse_click" },
+            { "frame": 35, "type": "drag_swoosh" },
+            { "frame": 90, "type": "file_drop_pop" }
+          ]
+        },
+        {
+          "actId": "act-1-2-hallucination",
+          "from": 150,
+          "to": 300,
+          "durationInFrames": 150,
+          "headline": "THE DISCONNECT",
+          "visual": {
+            "type": "CHAT_RESPONSE_CODEBLOCK",
+            "description": "Web AI assistant outputs a long 40-line snippet with a glowing 'Copy Code' button. Mouse clicks 'Copy Code', then alt-tabs furiously into the editor.",
+            "aiMessage": "Here is the updated function. Paste this into your file:",
+            "copyButtonGlow": true,
+            "altTabFlash": { "frame": 260, "duration": 15 }
+          },
+          "sfx": [
+            { "frame": 170, "type": "typing_soft_burst" },
+            { "frame": 230, "type": "click_button" },
+            { "frame": 260, "type": "whoosh_fast" }
+          ]
+        },
+        {
+          "actId": "act-1-3-terminal-crash",
+          "from": 300,
+          "to": 450,
+          "durationInFrames": 150,
+          "headline": "THE ERROR LOOP",
+          "visual": {
+            "type": "TERMINAL_CRASH_EXPLOSION",
+            "description": "Developer pastes code into IDE, opens terminal and executes `npm test`. BAM! Big red crash explosion: `TypeError: db.users.findOne is not a function`. The screen shakes.",
+            "terminalCommand": "npm test",
+            "errorOutput": [
+              "FAIL tests/auth.test.ts",
+              "● TypeError: db.users.findOne is not a function",
+              "    at verifySession (src/auth-service.ts:48:21)"
+            ],
+            "cameraShake": { "intensity": 8, "decay": "spring" }
+          },
+          "sfx": [
+            { "frame": 320, "type": "keyboard_enter" },
+            { "frame": 345, "type": "alarm_buzz_crash" },
+            { "frame": 360, "type": "screen_rumble" }
+          ]
+        },
+        {
+          "actId": "act-1-4-frustration-peak",
+          "from": 450,
+          "to": 600,
+          "durationInFrames": 150,
+          "headline": "STOP COPY-PASTING CODE!",
+          "visual": {
+            "type": "KINETIC_TEXT_SLAM",
+            "description": "High-intensity glitch transition. A montage of 5 error windows overlapping frantically. Suddenly screen flashes black and massive bold kinetic letters in blood red (#EF4444) slam onto screen: 'STOP COPY-PASTING CODE!' followed by an intense zoom-in.",
+            "typography": {
+              "line1": "STOP",
+              "line2": "COPY-PASTING",
+              "line3": "CODE!"
+            },
+            "color": "#EF4444",
+            "scaleSpring": { "from": 3.0, "to": 1.0, "damping": 12, "stiffness": 180 }
+          },
+          "sfx": [
+            { "frame": 460, "type": "glitch_riser" },
+            { "frame": 500, "type": "heavy_impact_slam" },
+            { "frame": 540, "type": "heartbeat_thud" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scene-2-solution",
+      "index": 2,
+      "title": "The Solution — Meet Bridge",
+      "timeRange": "00:20 - 00:35",
+      "from": 600,
+      "to": 1050,
+      "durationInFrames": 450,
+      "voiceover": "Meet Bridge. The universal local-to-web AI coding harness. Built in high-speed LN4 Volt, Bridge connects your physical machine directly to Claude, ChatGPT, Gemini, and DeepSeek via the Model Context Protocol. No port forwarding. Zero config files. Just run npx @markmayandi/bridge.",
+      "acts": [
+        {
+          "actId": "act-2-1-reveal",
+          "from": 600,
+          "to": 750,
+          "durationInFrames": 150,
+          "headline": "BRIDGE",
+          "subheadline": "Universal Local-to-Web AI Coding Harness",
+          "visual": {
+            "type": "BRAND_REVEAL_VOLT",
+            "description": "Explosive bass drop transition from pitch black to electric LN4 Volt (#D2FF00). The iconic Bridge suspension wireframe illuminates with glowing catenary cables and central quantum node. Text scales in with sleek letter-spacing expansion.",
+            "logoAsset": "video-spec/assets/bridge-logo.svg",
+            "glowColor": "#D2FF00",
+            "particleDust": true
+          },
+          "sfx": [
+            { "frame": 605, "type": "bass_drop_subwoofer" },
+            { "frame": 615, "type": "neon_hum_powerup" },
+            { "frame": 680, "type": "glass_shimmer" }
+          ]
+        },
+        {
+          "actId": "act-2-2-architecture",
+          "from": 750,
+          "to": 900,
+          "durationInFrames": 150,
+          "headline": "HOW IT WORKS",
+          "subheadline": "Local Files ◄═══ Secure Anycast MCP ═══► Web AI Models",
+          "visual": {
+            "type": "ARCHITECTURE_FLOW",
+            "description": "Animated architecture diagram. On left: Local Workspace inside strict folder jail. In center: Cloudflare Anycast HTTPS quantum tunnel. On right: 4 AI Model badges (Claude, ChatGPT, Gemini, DeepSeek) glowing in their signature brand colors.",
+            "diagramAsset": "video-spec/assets/architecture-diagram.svg",
+            "pulseDirection": "bidirectional",
+            "badges": [
+              { "name": "Claude Web", "asset": "video-spec/assets/claude-icon.svg" },
+              { "name": "ChatGPT", "asset": "video-spec/assets/chatgpt-icon.svg" },
+              { "name": "Gemini", "asset": "video-spec/assets/gemini-icon.svg" },
+              { "name": "DeepSeek", "asset": "video-spec/assets/deepseek-icon.svg" }
+            ]
+          },
+          "sfx": [
+            { "frame": 760, "type": "slide_snap" },
+            { "frame": 810, "type": "quantum_pulse" },
+            { "frame": 850, "type": "data_stream_chime" }
+          ]
+        },
+        {
+          "actId": "act-2-3-install",
+          "from": 900,
+          "to": 1050,
+          "durationInFrames": 150,
+          "headline": "ZERO-EFFORT INSTALLATION",
+          "visual": {
+            "type": "TERMINAL_INSTALL_COMMAND",
+            "description": "Minimalist dark terminal window slides up. Glowing prompt with cursor types: `npm i -g @markmayandi/bridge` followed by subtitle: 'Or instant run with npx'. Verified green checkmark flashes.",
+            "command": "npm install -g @markmayandi/bridge",
+            "npxAlternative": "npx @markmayandi/bridge",
+            "badgeText": "100% OPEN SOURCE & ZERO CONFIG"
+          },
+          "sfx": [
+            { "frame": 915, "type": "fast_key_strokes" },
+            { "frame": 975, "type": "install_complete_ding" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scene-3-terminal",
+      "index": 3,
+      "title": "Terminal Magic & Instant Tunnel",
+      "timeRange": "00:35 - 00:50",
+      "from": 1050,
+      "to": 1500,
+      "durationInFrames": 450,
+      "voiceover": "Just open any project directory and type: bridge dot. In under two seconds, Bridge spins up a local sandboxed daemon, initiates an encrypted Cloudflare Anycast tunnel, and copies your live MCP URL straight into your clipboard. Look at that dashboard. Real-time folder jail enforcement, dynamic directory switching with key D, and live JSON-RPC traffic streaming with key L.",
+      "acts": [
+        {
+          "actId": "act-3-1-run-command",
+          "from": 1050,
+          "to": 1200,
+          "durationInFrames": 150,
+          "headline": "ONE COMMAND TO START",
+          "visual": {
+            "type": "TERMINAL_BOOT_ANIMATION",
+            "description": "In terminal, user types `bridge .` and presses Enter. The iconic Bridge ASCII wireframe suspension bridge boots up with a smooth Volt green progress bar charging from 0% to 100%.",
+            "typedText": "bridge .",
+            "bootAscii": "BRIDGE // UNIVERSAL LOCAL-TO-WEB AI HARNESS",
+            "progressPercent": "100%",
+            "wireframeGlow": true
+          },
+          "sfx": [
+            { "frame": 1065, "type": "keyboard_enter" },
+            { "frame": 1090, "type": "engine_boot_hum" },
+            { "frame": 1150, "type": "progress_sweep" }
+          ]
+        },
+        {
+          "actId": "act-3-2-clipboard-tunnel",
+          "from": 1200,
+          "to": 1350,
+          "durationInFrames": 150,
+          "headline": "INSTANT ANYCAST TUNNEL",
+          "visual": {
+            "type": "TUNNEL_URL_AND_CLIPBOARD",
+            "description": "Live Cloudflare Anycast URL illuminates in Cyan (#50C8FF): `https://quantum-edge-842.trycloudflare.com/mcp`. Floating toast notification pops in top-right: '✓ [COPIED] MCP URL loaded into your clipboard!' with glowing clipboard icon.",
+            "urlText": "https://quantum-edge-842.trycloudflare.com/mcp",
+            "toast": "✓ [COPIED] MCP URL loaded into your clipboard!",
+            "hapticRipple": true
+          },
+          "sfx": [
+            { "frame": 1220, "type": "tunnel_connected_ping" },
+            { "frame": 1250, "type": "clipboard_copy_chime" },
+            { "frame": 1280, "type": "toast_pop" }
+          ]
+        },
+        {
+          "actId": "act-3-3-controls-dashboard",
+          "from": 1350,
+          "to": 1500,
+          "durationInFrames": 150,
+          "headline": "INTERACTIVE HARNESS DASHBOARD",
+          "visual": {
+            "type": "DASHBOARD_CARDS",
+            "description": "Highlights 4 interactive hotkey cards: [C] Re-copy MCP URL, [D] Switch project folder in-terminal, [L] Toggle live JSON-RPC traffic, [Q] Quit & clean ports. Highlights 'JAILED: STRICTLY ENFORCED' security badge.",
+            "cards": [
+              { "key": "[C]", "label": "Copy URL", "active": true },
+              { "key": "[D]", "label": "Directory Navigator", "active": false },
+              { "key": "[L]", "label": "Live Traffic Logs", "active": true },
+              { "key": "[Q]", "label": "Stop & Clean", "active": false }
+            ],
+            "securityBadge": "ZERO PARENT DIRECTORY ESCAPE"
+          },
+          "sfx": [
+            { "frame": 1370, "type": "card_flip_stagger_1" },
+            { "frame": 1395, "type": "card_flip_stagger_2" },
+            { "frame": 1420, "type": "lock_shield_click" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scene-4-connection",
+      "index": 4,
+      "title": "Web Chat Connection & Permission Prompt",
+      "timeRange": "00:50 - 01:10",
+      "from": 1500,
+      "to": 2100,
+      "durationInFrames": 600,
+      "voiceover": "Now switch to your web AI client. In Claude or ChatGPT, open Custom MCP tools and paste your Bridge URL. In a split second, connection succeeds with seven native tools ready. Type your prompt: at bridge, fix the auth token validation bug in server.js and run the test suite. Bridge presents an explicit security permission dialog showing the exact files and commands requested. Click Allow.",
+      "acts": [
+        {
+          "actId": "act-4-1-open-mcp-modal",
+          "from": 1500,
+          "to": 1650,
+          "durationInFrames": 150,
+          "headline": "CONNECTING IN WEB AI",
+          "visual": {
+            "type": "WEB_AI_SETTINGS_MODAL",
+            "description": "Sleek Claude/ChatGPT web UI interface. User clicks 'Add Custom MCP Server'. Modal dialog smoothly expands with dark backdrop blur.",
+            "modalAsset": "video-spec/assets/mcp-modal.svg",
+            "field1": "Name: Bridge",
+            "field2": "URL input field glowing in LN4 Volt"
+          },
+          "sfx": [
+            { "frame": 1520, "type": "modal_pop_soft" },
+            { "frame": 1560, "type": "field_focus_tick" }
+          ]
+        },
+        {
+          "actId": "act-4-2-paste-and-connect",
+          "from": 1650,
+          "to": 1800,
+          "durationInFrames": 150,
+          "headline": "PASTE & INSTANT GREEN",
+          "visual": {
+            "type": "MODAL_PASTE_SUCCESS",
+            "description": "Ctrl+V paste animation: `https://quantum-edge-842.trycloudflare.com/mcp` fills the input with 'PASTED' tag. Click 'Connect Server'. Status instantly changes to glowing green dot: 'Connected (7 Tools Ready: read, edit, pwsh, bash, jobs, plan)'.",
+            "buttonText": "Connect Server",
+            "statusPill": "● ACTIVE (7 Tools Connected)"
+          },
+          "sfx": [
+            { "frame": 1675, "type": "ctrl_v_whoosh" },
+            { "frame": 1720, "type": "click_connect" },
+            { "frame": 1750, "type": "success_chime_high" }
+          ]
+        },
+        {
+          "actId": "act-4-3-prompt-invocation",
+          "from": 1800,
+          "to": 1950,
+          "durationInFrames": 150,
+          "headline": "THE @BRIDGE INVOCATION",
+          "visual": {
+            "type": "CHAT_PROMPT_TYPING",
+            "description": "In chat input, user types `@bridge` which highlights in bold LN4 Volt, followed by prompt text: 'fix the auth token validation bug in server.js and run the test suite'. User hits Send. AI begins reasoning.",
+            "promptText": "@bridge fix the auth token validation bug in server.js and run the test suite",
+            "mentionColor": "#D2FF00",
+            "sendPulse": true
+          },
+          "sfx": [
+            { "frame": 1815, "type": "fast_keystrokes_pro" },
+            { "frame": 1890, "type": "message_sent_swoosh" }
+          ]
+        },
+        {
+          "actId": "act-4-4-permission-grant",
+          "from": 1950,
+          "to": 2100,
+          "durationInFrames": 150,
+          "headline": "ENTERPRISE-GRADE PERMISSION DIALOG",
+          "visual": {
+            "type": "SECURITY_PERMISSION_PROMPT",
+            "description": "Security modal slides in: 'Bridge is requesting permission to execute: edit_file(server.js) & pwsh(npm test) on your local workspace'. Mouse cursor hovers over the glowing LN4 Volt button '[Allow for Session]' and clicks it.",
+            "dialogAsset": "video-spec/assets/permission-dialog.svg",
+            "buttonGlow": "#D2FF00",
+            "clickFrame": 2040
+          },
+          "sfx": [
+            { "frame": 1965, "type": "shield_alert_soft" },
+            { "frame": 2040, "type": "satisfying_click" },
+            { "frame": 2060, "type": "lock_authorized_chime" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scene-5-execution-outro",
+      "index": 5,
+      "title": "Live Execution, Test Victory & Viral CTA",
+      "timeRange": "01:10 - 01:30",
+      "from": 2100,
+      "to": 2700,
+      "durationInFrames": 600,
+      "voiceover": "Watch this happen in real time. The web AI calls tools over the Anycast tunnel. Bridge reads the file locally, applies atomic replacements, and executes powershell tests directly in your machine. Look at the terminal: all fourteen tests pass in 320 milliseconds! No copying, no pasting, no context loss. Bridge turns every web AI into a full-stack local coding agent. Install it today with npx at markmayandi slash bridge or star us on GitHub!",
+      "acts": [
+        {
+          "actId": "act-5-1-dual-pane-execution",
+          "from": 2100,
+          "to": 2310,
+          "durationInFrames": 210,
+          "headline": "REAL-TIME LOCAL EXECUTION",
+          "visual": {
+            "type": "DUAL_PANE_EXECUTION",
+            "description": "Split visual. Top: Web chat showing live tool call badges ('Reading server.js...', 'Editing server.js...', 'Running pwsh npm test...'). Bottom: Bridge terminal streaming live JSON-RPC traffic lines in cyan and volt. File diff flashes with green lines of verified code.",
+            "logs": [
+              "--> tools/call: read_file({\"path\": \"server.js\"})",
+              "<-- tools/call: 1,544 lines loaded (24KB)",
+              "--> tools/call: edit_file({\"path\": \"server.js\", \"patch\": \"jwt.verify\"})",
+              "<-- tools/call: atomic patch applied cleanly",
+              "--> tools/call: pwsh({\"command\": \"npm test\"})"
+            ],
+            "diffLines": [
+              "- const decoded = jwt.decode(token);",
+              "+ const verified = jwt.verify(token, process.env.JWT_SECRET);"
+            ]
+          },
+          "sfx": [
+            { "frame": 2120, "type": "traffic_ping_1" },
+            { "frame": 2170, "type": "file_patch_whoosh" },
+            { "frame": 2220, "type": "traffic_ping_2" },
+            { "frame": 2270, "type": "terminal_exec_hum" }
+          ]
+        },
+        {
+          "actId": "act-5-2-test-victory",
+          "from": 2310,
+          "to": 2460,
+          "durationInFrames": 150,
+          "headline": "TESTS PASSING LOCALLY!",
+          "visual": {
+            "type": "VICTORY_CHECKMARK_EXPLOSION",
+            "description": "Terminal outputs: '✔ 14 passing (0 failing) [320ms]' in brilliant electric green. Web AI outputs: 'All tests pass on your machine!'. Big neon green celebration ring bursts across screen. The developer is completely hands-free.",
+            "testStats": {
+              "passed": 14,
+              "failed": 0,
+              "duration": "320ms"
+            },
+            "celebrationRing": true
+          },
+          "sfx": [
+            { "frame": 2330, "type": "victory_fanfare_chord" },
+            { "frame": 2360, "type": "confetti_snap" }
+          ]
+        },
+        {
+          "actId": "act-5-3-viral-cta",
+          "from": 2460,
+          "to": 2700,
+          "durationInFrames": 240,
+          "headline": "BRIDGE YOUR WORKSPACE TODAY",
+          "subheadline": "Universal Local-to-Web AI Coding Harness",
+          "visual": {
+            "type": "OUTRO_CALL_TO_ACTION",
+            "description": "Grand finale outro card. Giant glowing Bridge icon in center. Feature pills orbiting: 'Strict Folder Jail', 'Zero Open Ports', 'Works on Claude, ChatGPT, Gemini, DeepSeek'. Big terminal pill with copy command: `npx @markmayandi/bridge`. GitHub star badge with golden star icon.",
+            "logoIcon": "video-spec/assets/bridge-icon.svg",
+            "installPill": "npx @markmayandi/bridge",
+            "globalPill": "npm i -g @markmayandi/bridge",
+            "githubUrl": "github.com/Manimaran-tech/bridge",
+            "author": "Created by Manimaran"
+          },
+          "sfx": [
+            { "frame": 2470, "type": "cinematic_outro_boom" },
+            { "frame": 2510, "type": "star_shine_chime" },
+            { "frame": 2580, "type": "sub_bass_fadeout" }
+          ]
+        }
+      ]
+    }
+  ],
+  "audioSoundtrack": {
+    "genre": "High-Tech Cyber Trap / Synthwave Beat (135 BPM)",
+    "bassDropFrame": 605,
+    "outroFadeOutFrame": 2680,
+    "soundEffectsLibrary": [
+      "mouse_click",
+      "drag_swoosh",
+      "file_drop_pop",
+      "typing_soft_burst",
+      "whoosh_fast",
+      "alarm_buzz_crash",
+      "screen_rumble",
+      "heavy_impact_slam",
+      "bass_drop_subwoofer",
+      "neon_hum_powerup",
+      "quantum_pulse",
+      "engine_boot_hum",
+      "clipboard_copy_chime",
+      "toast_pop",
+      "modal_pop_soft",
+      "satisfying_click",
+      "lock_authorized_chime",
+      "victory_fanfare_chord",
+      "cinematic_outro_boom"
+    ]
+  }
+}

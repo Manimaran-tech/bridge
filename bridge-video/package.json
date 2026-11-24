@@ -1,0 +1,28 @@
+{
+  "name": "bridge-video",
+  "version": "1.0.0",
+  "description": "Ultra-modern product promo video for Bridge in Remotion",
+  "scripts": {
+    "start": "remotion preview src/index.ts",
+    "preview": "remotion preview src/index.ts",
+    "build:reel": "remotion render src/index.ts BridgeReel out/video-reel.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p --overwrite",
+    "build:youtube": "remotion render src/index.ts BridgeYouTube out/video-youtube.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p --overwrite",
+    "build": "npm run build:reel && npm run build:youtube",
+    "still": "remotion still src/index.ts BridgeYouTube"
+  },
+  "dependencies": {
+    "@remotion/google-fonts": "4.0.545",
+    "@remotion/shapes": "^4.0.545",
+    "@remotion/transitions": "^4.0.545",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.545"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.545",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "typescript": "^5.4.5"
+  }
+}

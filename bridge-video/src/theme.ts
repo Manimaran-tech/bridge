@@ -1,0 +1,41 @@
+import { interFont, jetBrainsMonoFont } from './fonts';
+
+export const THEME = {
+  palette: {
+    primaryVolt: '#D2FF00',
+    primaryVoltLight: '#E5FF4D',
+    primaryVoltDark: '#98B800',
+    primaryVoltGlow: 'rgba(210, 255, 0, 0.35)',
+    primaryVoltGlowStrong: 'rgba(210, 255, 0, 0.65)',
+    secondaryCyan: '#50C8FF',
+    secondaryCyanGlow: 'rgba(80, 200, 255, 0.35)',
+    bgCanvas: '#090B0E',
+    bgDarkGradient: 'linear-gradient(180deg, #0E1015 0%, #08090A 100%)',
+    surfaceCard: '#141720',
+    surfaceCardSemiTransparent: 'rgba(20, 23, 32, 0.90)',
+    surfaceElevated: '#1C202C',
+    surfaceElevatedBorder: '#2E3547',
+    borderMuted: '#272C3A',
+    borderVolt: '#D2FF00',
+    textHeading: '#FFFFFF',
+    textBody: '#C6CAD6',
+    textMuted: '#8E92A4',
+    textSteel: '#484D5E',
+    errorRed: '#EF4444',
+    errorBg: '#2B1114',
+    errorGlow: 'rgba(239, 68, 68, 0.4)',
+    successGreen: '#10B981',
+    successBg: '#0E241B',
+    successGlow: 'rgba(16, 185, 129, 0.4)',
+  },
+  typography: {
+    display: `${interFont.fontFamily}, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`,
+    mono: `${jetBrainsMonoFont.fontFamily}, Consolas, 'SF Mono', monospace`,
+  },
+  shadows: {
+    voltCard: '0 8px 32px rgba(210, 255, 0, 0.12), 0 0 0 1px rgba(210, 255, 0, 0.25)',
+    voltNeon: '0 0 25px rgba(210, 255, 0, 0.45)',
+    cyanNeon: '0 0 25px rgba(80, 200, 255, 0.45)',
+    card: '0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px #272C3A',
+  },
+} as const;

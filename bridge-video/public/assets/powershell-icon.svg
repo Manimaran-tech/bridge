@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+  <defs>
+    <linearGradient id="psGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#1E3A8A" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="url(#psGrad)" stroke="#3B82F6" stroke-width="2" />
+  <path d="M32 38L66 64L32 90" fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" />
+  <line x1="66" y1="90" x2="98" y2="90" stroke="#93C5FD" stroke-width="11" stroke-linecap="round" />
+</svg>

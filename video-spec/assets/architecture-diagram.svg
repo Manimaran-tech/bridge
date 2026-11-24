@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="100%" height="100%">
+  <defs>
+    <linearGradient id="voltBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D2FF00" />
+      <stop offset="100%" stop-color="#76B900" />
+    </linearGradient>
+    <linearGradient id="cyanBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#50C8FF" />
+      <stop offset="100%" stop-color="#0072FF" />
+    </linearGradient>
+    <linearGradient id="tunnelBeam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#D2FF00" stop-opacity="0.9" />
+      <stop offset="50%" stop-color="#50C8FF" stop-opacity="1" />
+      <stop offset="100%" stop-color="#D2FF00" stop-opacity="0.9" />
+    </linearGradient>
+    <filter id="diagGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" rx="32" fill="#0C0E14" stroke="#232733" stroke-width="2" />
+
+  <!-- Background grid subtle -->
+  <g opacity="0.05" stroke="#FFFFFF" stroke-width="1">
+    <line x1="0" y1="90" x2="960" y2="90" />
+    <line x1="0" y1="180" x2="960" y2="180" />
+    <line x1="0" y1="270" x2="960" y2="270" />
+    <line x1="0" y1="360" x2="960" y2="360" />
+    <line x1="0" y1="450" x2="960" y2="450" />
+    <line x1="240" y1="0" x2="240" y2="540" />
+    <line x1="480" y1="0" x2="480" y2="540" />
+    <line x1="720" y1="0" x2="720" y2="540" />
+  </g>
+
+  <!-- Title Top -->
+  <text x="480" y="55" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="20" font-weight="800" letter-spacing="4" fill="#D2FF00">
+    BRIDGE REAL-TIME ARCHITECTURE
+  </text>
+  <text x="480" y="80" text-anchor="middle" font-family="'Inter', sans-serif" font-size="13" font-weight="500" letter-spacing="1" fill="#8E92A4">
+    Zero Open Inbound Ports  •  Strict Jail Sandbox  •  Model Context Protocol
+  </text>
+
+  <!-- LEFT BOX: Local Machine Workspace -->
+  <g transform="translate(60, 120)">
+    <rect width="260" height="340" rx="20" fill="#141720" stroke="#2C3242" stroke-width="2" />
+    <rect x="0" y="0" width="260" height="48" rx="20" fill="#1C202C" />
+    <circle cx="24" cy="24" r="6" fill="#EF4444" />
+    <circle cx="44" cy="24" r="6" fill="#F59E0B" />
+    <circle cx="64" cy="24" r="6" fill="#10B981" />
+    <text x="140" y="30" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="700" fill="#F0F2F8">
+      LOCAL WORKSPACE
+    </text>
+
+    <!-- Content Inside Local -->
+    <!-- Folder Jail Badge -->
+    <rect x="20" y="65" width="220" height="52" rx="10" fill="#1E2412" stroke="#D2FF00" stroke-width="1.5" />
+    <text x="35" y="88" font-family="'Inter', sans-serif" font-size="11" font-weight="700" fill="#D2FF00">STRICT FOLDER JAIL</text>
+    <text x="35" y="105" font-family="'JetBrains Mono', monospace" font-size="10" fill="#A3D900">c:/projects/my-app</text>
+
+    <!-- Local Tools List -->
+    <rect x="20" y="130" width="220" height="110" rx="10" fill="#0D0F14" stroke="#252A36" stroke-width="1" />
+    <text x="35" y="152" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" fill="#50C8FF">EXPOSED TOOLS:</text>
+    <text x="35" y="172" font-family="'JetBrains Mono', monospace" font-size="10" fill="#8E92A4">● read_file, edit_file</text>
+    <text x="35" y="190" font-family="'JetBrains Mono', monospace" font-size="10" fill="#8E92A4">● bash, pwsh (terminal)</text>
+    <text x="35" y="208" font-family="'JetBrains Mono', monospace" font-size="10" fill="#8E92A4">● jobs, str_replace_editor</text>
+    <text x="35" y="226" font-family="'JetBrains Mono', monospace" font-size="10" fill="#10B981">✓ Symlink boundary guards</text>
+
+    <!-- Daemon status -->
+    <rect x="20" y="255" width="220" height="60" rx="10" fill="#161B26" stroke="#374154" stroke-width="1" />
+    <text x="35" y="278" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" fill="#FFFFFF">BRIDGE DAEMON</text>
+    <text x="35" y="298" font-family="'JetBrains Mono', monospace" font-size="10" fill="#D2FF00">127.0.0.1:3000 (Internal Only)</text>
+  </g>
+
+  <!-- CENTER BOX: Cloudflare Anycast Tunnel & Security Gateway -->
+  <g transform="translate(360, 160)">
+    <!-- Glow Beam Connection Line Behind -->
+    <line x1="-40" y1="120" x2="280" y2="120" stroke="url(#tunnelBeam)" stroke-width="6" stroke-dasharray="8,6" filter="url(#diagGlow)" />
+    
+    <rect width="240" height="260" rx="20" fill="#141722" stroke="url(#voltBorder)" stroke-width="2.5" filter="url(#diagGlow)" />
+    
+    <!-- Cloudflare & Tunnel Badge -->
+    <g transform="translate(120, 48)">
+      <circle cx="0" cy="0" r="26" fill="#F38020" />
+      <path d="M 12,6 C 14,6 16,4 16,2 C 16,0 14,-2 12,-3 C 12,-9 7,-14 1,-14 C -3,-14 -6,-12 -8,-8 C -9,-10 -11,-11 -13,-11 C -17,-11 -20,-7 -20,-2 C -22,-1 -23,1 -23,3 C -23,5 -22,6 -20,6 Z" fill="#FFFFFF" />
+    </g>
+
+    <text x="120" y="105" text-anchor="middle" font-family="'Inter', sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">
+      CLOUDFLARE ANYCAST
+    </text>
+    <text x="120" y="125" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="600" fill="#D2FF00">
+      QUANTUM HTTPS TUNNEL
+    </text>
+
+    <!-- Encrypted Tunnel Specs -->
+    <rect x="20" y="145" width="200" height="92" rx="10" fill="#0E1017" stroke="#252A38" stroke-width="1" />
+    <text x="32" y="168" font-family="'JetBrains Mono', monospace" font-size="10" fill="#50C8FF">ENDPOINT:</text>
+    <text x="32" y="185" font-family="'JetBrains Mono', monospace" font-size="9" fill="#F0F2F8">https://*.trycloudflare.com/mcp</text>
+    <text x="32" y="208" font-family="'Inter', sans-serif" font-size="10" font-weight="600" fill="#10B981">✓ TLS 1.3 / AES-256</text>
+    <text x="32" y="224" font-family="'Inter', sans-serif" font-size="10" font-weight="600" fill="#10B981">✓ Auto Clipboard Sync</text>
+  </g>
+
+  <!-- RIGHT BOX: Web AI Chat Clients -->
+  <g transform="translate(640, 120)">
+    <rect width="260" height="340" rx="20" fill="#141720" stroke="#2C3242" stroke-width="2" />
+    <rect x="0" y="0" width="260" height="48" rx="20" fill="#1C202C" />
+    <circle cx="24" cy="24" r="6" fill="#EF4444" />
+    <circle cx="44" cy="24" r="6" fill="#F59E0B" />
+    <circle cx="64" cy="24" r="6" fill="#10B981" />
+    <text x="140" y="30" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="700" fill="#F0F2F8">
+      WEB AI CLIENTS
+    </text>
+
+    <!-- Supported AI Models Pills -->
+    <g transform="translate(20, 65)">
+      <!-- Claude -->
+      <rect width="220" height="50" rx="10" fill="#241B16" stroke="#D97757" stroke-width="1.5" />
+      <text x="20" y="30" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#D97757">Claude Web</text>
+      <text x="145" y="30" font-family="'JetBrains Mono', monospace" font-size="10" fill="#FFFFFF">@bridge</text>
+    </g>
+
+    <g transform="translate(20, 125)">
+      <!-- ChatGPT -->
+      <rect width="220" height="50" rx="10" fill="#132420" stroke="#10A37F" stroke-width="1.5" />
+      <text x="20" y="30" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#10A37F">ChatGPT</text>
+      <text x="145" y="30" font-family="'JetBrains Mono', monospace" font-size="10" fill="#FFFFFF">MCP tool</text>
+    </g>
+
+    <g transform="translate(20, 185)">
+      <!-- Gemini -->
+      <rect width="220" height="50" rx="10" fill="#1B1E30" stroke="#50C8FF" stroke-width="1.5" />
+      <text x="20" y="30" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#50C8FF">Google Gemini</text>
+      <text x="145" y="30" font-family="'JetBrains Mono', monospace" font-size="10" fill="#FFFFFF">Extension</text>
+    </g>
+
+    <g transform="translate(20, 245)">
+      <!-- DeepSeek -->
+      <rect width="220" height="50" rx="10" fill="#152033" stroke="#4D88FF" stroke-width="1.5" />
+      <text x="20" y="30" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#4D88FF">DeepSeek</text>
+      <text x="145" y="30" font-family="'JetBrains Mono', monospace" font-size="10" fill="#FFFFFF">Harness</text>
+    </g>
+  </g>
+
+  <!-- Bottom Flow Arrows / Protocol note -->
+  <text x="480" y="500" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="12" font-weight="600" letter-spacing="1" fill="#8E92A4">
+    ◄── Bidirectional JSON-RPC 2.0 Over Server-Sent Events (SSE) ──►
+  </text>
+</svg>

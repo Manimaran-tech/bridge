@@ -12,7 +12,7 @@ RUN apk upgrade --no-cache \
 
 WORKDIR /app
 COPY package.json ./
-COPY secure-folder-mcp/server.js ./secure-folder-mcp/server.js
+COPY secure-folder-mcp/server.js secure-folder-mcp/context-compactor.js ./secure-folder-mcp/
 
 ENV NODE_ENV=production \
     BRIDGE_HOST=0.0.0.0

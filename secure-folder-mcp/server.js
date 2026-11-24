@@ -32,6 +32,7 @@ const BRIDGE_VERSION = (() => {
   return '0.0.0';
 })();
 const { exec, spawn, execSync } = require('child_process');
+const { createContextCompactor } = require('./context-compactor');
 
 // ==========================================
 // 1. State & CLI Parsing
@@ -51,6 +52,11 @@ let currentPlan = []; // dsh-plan-mode
 const fileBackups = new Map(); // dsh-atomic-write: path -> [previous_contents]
 const backgroundJobs = new Map(); // dsh-tool-jobs: jobId -> { proc, cmd, startTime, logs }
 let nextJobId = 1;
+let nextCmdId = 1;
+const activeProcesses = new Map(); // id ('cmd-n' | 'job-n') -> process record for IPC activity/control
+const sessionFileChanges = new Map(); // relPath -> session change summary for snapshot-request
+let sessionChangeBytes = 0;
+let contextBudgetFromCli = null;
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
@@ -68,6 +74,10 @@ for (let i = 0; i < args.length; i++) {
     approvalModeFromCli = arg.split('=')[1];
   } else if (arg === '--approval-mode') {
     approvalModeFromCli = args[++i];
+  } else if (arg === '--context-budget') {
+    contextBudgetFromCli = parseInt(args[++i], 10);
+  } else if (arg.startsWith('--context-budget=')) {
+    contextBudgetFromCli = parseInt(arg.split('=')[1], 10);
   } else if (arg === '--disable-shell') {
     disableShell = true;
   } else if (!arg.startsWith('-') && !rootDir) {
@@ -261,6 +271,321 @@ async function gate(ctx, kind, action, detail, reason, meta) {
 }
 
 // ==========================================
+// Activity IPC & Diff Helpers (Overview Panel)
+// ==========================================
+const MAX_DIFF_BYTES = 2 * 1024 * 1024;
+const MAX_ACTIVITY_CHUNK_BYTES = 8 * 1024;
+const MAX_FINISHED_PROCS = 50;
+const PROC_RING_LINES = 200;
+
+function sendIpc(payload) {
+  if (typeof process.send !== 'function' || !process.connected) return;
+  try { process.send(payload); } catch (e) {}
+}
+
+function emitActivity(evt) {
+  if (typeof process.send !== 'function' || !process.connected) return;
+  try { process.send({ type: 'activity', ts: Date.now(), ...evt }); } catch (e) {}
+}
+
+function splitDiffLines(text) {
+  if (text === null || text === undefined || text === '') return [];
+  const str = String(text);
+  const lines = str.split(/\r?\n/);
+  if (lines.length > 0 && lines[lines.length - 1] === '' && /\r?\n$/.test(str)) lines.pop();
+  return lines;
+}
+
+function computeLineDiffCounts(before, after) {
+  if ((typeof before === 'string' && Buffer.byteLength(before, 'utf8') > MAX_DIFF_BYTES) ||
+      (typeof after === 'string' && Buffer.byteLength(after, 'utf8') > MAX_DIFF_BYTES)) {
+    return { added: null, removed: null };
+  }
+  if (before === null || before === undefined) {
+    if (after === null || after === undefined) return { added: 0, removed: 0 };
+    return { added: splitDiffLines(after).length, removed: 0 };
+  }
+  if (after === null || after === undefined) {
+    return { added: 0, removed: splitDiffLines(before).length };
+  }
+  const oldLines = splitDiffLines(before);
+  const newLines = splitDiffLines(after);
+  let prefix = 0;
+  const minLen = Math.min(oldLines.length, newLines.length);
+  while (prefix < minLen && oldLines[prefix] === newLines[prefix]) prefix++;
+  let suffix = 0;
+  while (
+    suffix < minLen - prefix &&
+    oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+  const a = oldLines.slice(prefix, oldLines.length - suffix);
+  const b = newLines.slice(prefix, newLines.length - suffix);
+  if (a.length === 0) return { added: b.length, removed: 0 };
+  if (b.length === 0) return { added: 0, removed: a.length };
+
+  if (a.length * b.length <= 4000000) {
+    const shortArr = a.length <= b.length ? a : b;
+    const longArr = a.length <= b.length ? b : a;
+    const m = shortArr.length;
+    let prev = new Uint32Array(m + 1);
+    let curr = new Uint32Array(m + 1);
+    for (let i = 1; i <= longArr.length; i++) {
+      const li = longArr[i - 1];
+      curr[0] = 0;
+      for (let j = 1; j <= m; j++) {
+        if (li === shortArr[j - 1]) curr[j] = prev[j - 1] + 1;
+        else curr[j] = prev[j] >= curr[j - 1] ? prev[j] : curr[j - 1];
+      }
+      const tmp = prev; prev = curr; curr = tmp;
+    }
+    const lcs = prev[m];
+    return { added: b.length - lcs, removed: a.length - lcs };
+  }
+
+  const counts = new Map();
+  for (const line of a) counts.set(line, (counts.get(line) || 0) + 1);
+  let common = 0;
+  for (const line of b) {
+    const c = counts.get(line) || 0;
+    if (c > 0) { common++; counts.set(line, c - 1); }
+  }
+  return { added: b.length - common, removed: a.length - common };
+}
+
+function resetSessionFileChanges() {
+  sessionFileChanges.clear();
+  sessionChangeBytes = 0;
+}
+
+function recordAndEmitFileChange({ op, resolved, tool, before, after, isDir = false, skipCounts = false }) {
+  const relPath = path.relative(rootDir, resolved).replace(/\\/g, '/');
+  const counts = skipCounts ? { added: 0, removed: 0 } : computeLineDiffCounts(before, after);
+  const beforeSafe = typeof before === 'string' && Buffer.byteLength(before, 'utf8') <= MAX_DIFF_BYTES ? before : null;
+  const afterSafe = typeof after === 'string' && Buffer.byteLength(after, 'utf8') <= MAX_DIFF_BYTES ? after : null;
+  const now = Date.now();
+
+  let entry = sessionFileChanges.get(relPath);
+  if (!entry) {
+    entry = {
+      path: relPath,
+      op,
+      added: counts.added,
+      removed: counts.removed,
+      firstBefore: op === 'create' ? null : beforeSafe,
+      lastAfter: afterSafe,
+      tools: [tool],
+      times: [now],
+      isDir
+    };
+    if (entry.firstBefore) sessionChangeBytes += entry.firstBefore.length;
+    if (entry.lastAfter) sessionChangeBytes += entry.lastAfter.length;
+    sessionFileChanges.set(relPath, entry);
+  } else {
+    if (entry.lastAfter) sessionChangeBytes -= entry.lastAfter.length;
+    entry.lastAfter = afterSafe;
+    if (entry.lastAfter) sessionChangeBytes += entry.lastAfter.length;
+    entry.isDir = isDir;
+    if (!entry.tools.includes(tool)) entry.tools.push(tool);
+    entry.times.push(now);
+    if (op === 'delete') entry.op = 'delete';
+    else if (op === 'revert') entry.op = 'revert';
+    else if (entry.op !== 'create') entry.op = op;
+    if (counts.added === null || counts.removed === null) {
+      entry.added = null;
+      entry.removed = null;
+    } else if (!skipCounts) {
+      const totalDiff = computeLineDiffCounts(entry.firstBefore, entry.lastAfter);
+      entry.added = totalDiff.added;
+      entry.removed = totalDiff.removed;
+    }
+  }
+  if (sessionChangeBytes > MAX_SNAPSHOT_BYTES) {
+    for (const item of sessionFileChanges.values()) {
+      if (item === entry) continue;
+      if (item.lastAfter) { sessionChangeBytes -= item.lastAfter.length; item.lastAfter = null; }
+      if (sessionChangeBytes <= MAX_SNAPSHOT_BYTES) break;
+    }
+  }
+
+  emitActivity({
+    kind: 'file-change',
+    op,
+    path: relPath,
+    added: counts.added,
+    removed: counts.removed,
+    tool,
+    before: beforeSafe,
+    after: afterSafe,
+    isDir
+  });
+}
+
+function appendProcRing(entry, text) {
+  const normalized = String(text).replace(/\r\n/g, '\n');
+  const parts = normalized.split('\n');
+  if (entry.partialLine) {
+    parts[0] = entry.partialLine + parts[0];
+    entry.partialLine = '';
+  }
+  if (!normalized.endsWith('\n')) {
+    entry.partialLine = parts.pop();
+  } else if (parts.length > 0 && parts[parts.length - 1] === '') {
+    parts.pop();
+  }
+  for (const line of parts) {
+    entry.outputRing.push(line);
+    if (entry.outputRing.length > PROC_RING_LINES) entry.outputRing.shift();
+  }
+}
+
+function emitProcOutput(entry, stream, rawChunk) {
+  const text = typeof rawChunk === 'string' ? rawChunk : rawChunk.toString('utf8');
+  if (!text) return;
+  appendProcRing(entry, text);
+  let offset = 0;
+  const maxStep = 4096;
+  while (offset < text.length) {
+    let end = Math.min(text.length, offset + maxStep);
+    let slice = text.slice(offset, end);
+    while (Buffer.byteLength(slice, 'utf8') > MAX_ACTIVITY_CHUNK_BYTES && end > offset + 1) {
+      end = offset + Math.max(1, Math.floor((end - offset) / 2));
+      slice = text.slice(offset, end);
+    }
+    emitActivity({ kind: 'cmd-output', id: entry.id, stream, chunk: slice });
+    offset = end;
+  }
+}
+
+function pruneFinishedActiveProcesses() {
+  const finished = [];
+  for (const [id, p] of activeProcesses) {
+    if (p.status !== 'running') finished.push([id, p.endTime || 0]);
+  }
+  if (finished.length <= MAX_FINISHED_PROCS) return;
+  finished.sort((a, b) => a[1] - b[1]);
+  const toDrop = finished.length - MAX_FINISHED_PROCS;
+  for (let i = 0; i < toDrop; i++) activeProcesses.delete(finished[i][0]);
+}
+
+function emitCmdExit(entry, code, signal, status) {
+  if (!entry || entry.exitEmitted) return;
+  entry.exitEmitted = true;
+  if (entry.partialLine) {
+    entry.outputRing.push(entry.partialLine);
+    if (entry.outputRing.length > PROC_RING_LINES) entry.outputRing.shift();
+    entry.partialLine = '';
+  }
+  entry.status = status;
+  entry.code = code !== undefined ? code : null;
+  entry.signal = signal !== undefined ? signal : null;
+  entry.endTime = Date.now();
+  emitActivity({
+    kind: 'cmd-exit',
+    id: entry.id,
+    code: entry.code,
+    signal: entry.signal,
+    status: entry.status
+  });
+  pruneFinishedActiveProcesses();
+}
+
+function findActiveProcess(id) {
+  if (id === undefined || id === null) return null;
+  const key = String(id);
+  return activeProcesses.get(key) || activeProcesses.get(`job-${key}`) || null;
+}
+
+function stopProcessById(id) {
+  const entry = findActiveProcess(id);
+  if (!entry) return false;
+  if (entry.status !== 'running') return true;
+  entry.stoppedByUser = true;
+  if (entry.jobRecord) {
+    entry.jobRecord.status = 'stopped';
+    entry.jobRecord.endTime = Date.now();
+  }
+  killProcessTree(entry.proc);
+  emitCmdExit(entry, null, 'SIGTERM', 'stopped');
+  return true;
+}
+
+function writeProcessInput(id, data) {
+  const entry = findActiveProcess(id);
+  if (!entry || entry.status !== 'running') return false;
+  const stdin = entry.proc && entry.proc.stdin;
+  if (!stdin || !stdin.writable || stdin.destroyed) return false;
+  try {
+    stdin.write(String(data));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function endProcessInput(id) {
+  const entry = findActiveProcess(id);
+  if (!entry || entry.status !== 'running') return false;
+  const stdin = entry.proc && entry.proc.stdin;
+  if (stdin && !stdin.destroyed) {
+    try { stdin.end(); } catch (e) {}
+  }
+  entry.stdinOpen = false;
+  emitActivity({ kind: 'cmd-stdin-closed', id: entry.id, stdinOpen: false });
+  return true;
+}
+
+function buildSnapshotPayload() {
+  const commands = Array.from(activeProcesses.values()).map(p => ({
+    id: p.id,
+    command: p.command,
+    cwd: p.cwd,
+    background: p.background,
+    pid: p.pid,
+    startTime: p.startTime,
+    endTime: p.endTime || null,
+    status: p.status,
+    code: p.code !== undefined ? p.code : null,
+    signal: p.signal !== undefined ? p.signal : null,
+    stdinOpen: Boolean(p.status === 'running' && p.stdinOpen !== false && p.proc && p.proc.stdin && p.proc.stdin.writable && !p.proc.stdin.destroyed),
+    lines: p.partialLine ? [...p.outputRing, p.partialLine] : p.outputRing.slice()
+  }));
+  return {
+    type: 'snapshot',
+    root: rootDir,
+    files: Array.from(sessionFileChanges.values()),
+    commands
+  };
+}
+
+function handleRevertRequest(msg) {
+  const reqPath = msg.path;
+  const requestId = msg.requestId;
+  try {
+    if (isReadOnly) throw new Error('Server running in read-only mode.');
+    const resolved = validateAndResolve(reqPath, true);
+    assertWritable(resolved);
+    if (!(fileBackups.get(resolved) || []).length) {
+      throw new Error(`No undo snapshots available for "${reqPath}".`);
+    }
+    const before = fs.existsSync(resolved) && fs.statSync(resolved).isFile()
+      ? fs.readFileSync(resolved, 'utf-8')
+      : null;
+    const previous = popSnapshot(resolved);
+    if (previous === null) {
+      throw new Error(`No undo snapshots available for "${reqPath}".`);
+    }
+    atomicWriteFile(resolved, previous);
+    const remaining = (fileBackups.get(resolved) || []).length;
+    recordAndEmitFileChange({ op: 'revert', resolved, tool: 'revert_file', before, after: previous });
+    sendIpc({ type: 'revert-result', requestId, path: reqPath, ok: true, remaining });
+  } catch (err) {
+    sendIpc({ type: 'revert-result', requestId, path: reqPath, ok: false, error: err.message });
+  }
+}
+
+// ==========================================
 // Human Approval (via Bridge dashboard over IPC)
 // ==========================================
 const APPROVAL_TIMEOUT_MS = 90000; // stay under Cloudflare's ~100s limit for JSON clients
@@ -269,12 +594,33 @@ let nextApprovalId = 1;
 
 if (typeof process.on === 'function') {
   process.on('message', (msg) => {
-    if (msg && msg.type === 'shutdown') { stopAllJobs(); process.exit(0); }
-    if (msg && msg.type === 'set-approval-mode') {
-      if (setApprovalMode(msg.mode)) { try { process.send({ type: 'approval-mode', mode: approvalMode }); } catch (e) {} }
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'shutdown') { stopAllJobs(); process.exit(0); }
+    if (msg.type === 'set-approval-mode') {
+      if (setApprovalMode(msg.mode)) { sendIpc({ type: 'approval-mode', mode: approvalMode }); }
       return;
     }
-    if (!msg || msg.type !== 'approval-response') return;
+    if (msg.type === 'job-stop') {
+      stopProcessById(msg.id);
+      return;
+    }
+    if (msg.type === 'job-input') {
+      writeProcessInput(msg.id, msg.data);
+      return;
+    }
+    if (msg.type === 'job-eof') {
+      endProcessInput(msg.id);
+      return;
+    }
+    if (msg.type === 'snapshot-request') {
+      sendIpc(buildSnapshotPayload());
+      return;
+    }
+    if (msg.type === 'revert-request') {
+      handleRevertRequest(msg);
+      return;
+    }
+    if (msg.type !== 'approval-response') return;
     const pending = pendingApprovals.get(msg.id);
     if (!pending) return;
     pendingApprovals.delete(msg.id);
@@ -336,9 +682,11 @@ function getForbiddenSandboxReason(dir) {
 
 // Tell the Bridge dashboard the active project changed so its PROJECT line stays accurate.
 function notifyProjectChanged() {
+  resetSessionFileChanges();
   if (typeof process.send === 'function' && process.connected) {
     try { process.send({ type: 'project-changed', path: rootDir }); } catch (e) {}
   }
+  emitActivity({ kind: 'project-changed', root: rootDir });
 }
 
 // Run the policy for a command; throws if blocked or denied.
@@ -379,6 +727,15 @@ try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch (e) {}
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const MAX_LOG_BYTES = 10 * 1024 * 1024;
 let logWritesSinceCheck = 0;
+// One-line, length-capped error text for the request log (never the auth token).
+function errorSummaryForLog(text) {
+  if (typeof text !== 'string' || !text) return '';
+  let line = text.split(/\r?\n/).find(l => l.trim()) || '';
+  if (authToken) line = line.split(authToken).join('[REDACTED]');
+  line = line.trim();
+  return line.length > 300 ? line.slice(0, 300) + '…' : line;
+}
+
 function appendRequestLog(line) {
   const safe = line.replace(/([?&](token|apiKey|auth)=)[^&\s]+/gi, '$1[REDACTED]');
   try {
@@ -528,6 +885,9 @@ function stopAllJobs() {
   if (shuttingDown) return;
   shuttingDown = true;
   for (const job of backgroundJobs.values()) killProcessTree(job.proc);
+  for (const entry of activeProcesses.values()) {
+    if (entry && entry.proc) killProcessTree(entry.proc);
+  }
 }
 process.on('exit', stopAllJobs);
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
@@ -1020,6 +1380,58 @@ const tools = [
     }
   },
 
+  // --- 7b. Context Compaction ---
+  {
+    name: 'compact_context',
+    description: 'Bridge Context Compaction: Saves a checkpoint of this conversation so the chat context can be compacted. Call it when Bridge appends a "[Bridge context notice]" to a tool result, before a long new phase of work, or when the user asks to compact. Write the summary yourself; Bridge adds the plan, files changed, recent commands, running jobs and git status. After compacting, rely on the checkpoint instead of earlier tool output; a new chat can continue with resume_context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        summary: {
+          type: 'string',
+          description: 'Dense summary of the conversation so far: the user\'s goal, constraints and preferences, key decisions and why, what is done (with file names), current state, and anything that failed. Enough for a fresh model with no history to continue.'
+        },
+        next_steps: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Ordered remaining steps.'
+        },
+        open_questions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Unresolved questions or things waiting on the user.'
+        },
+        key_files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Files most relevant to continue, with a few words on each.'
+        },
+        title: {
+          type: 'string',
+          description: 'Optional short title for the checkpoint.'
+        }
+      },
+      required: ['summary']
+    }
+  },
+  {
+    name: 'resume_context',
+    description: 'Bridge Context Resume: Loads the latest saved context checkpoint for the active project (or a specific one) so a new chat can continue earlier work. Call it at the start of a chat when the user wants to continue previous work. Use list=true to see all checkpoints.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        checkpoint_id: {
+          type: 'string',
+          description: 'Optional checkpoint id; defaults to the newest.'
+        },
+        list: {
+          type: 'boolean',
+          description: 'List saved checkpoints instead of loading one.'
+        }
+      }
+    }
+  },
+
   // --- 8. Core Filesystem Suite (dsh-tool-fs) ---
   {
     name: 'select_project_folder',
@@ -1231,7 +1643,26 @@ for (const tool of tools) {
     tool.annotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
   } else if (tool.name === 'delete_file') {
     tool.annotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
+  } else if (tool.name === 'compact_context') {
+    tool.annotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+  } else if (tool.name === 'resume_context') {
+    tool.annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  } else if (tool.name === 'select_project_folder') {
+    tool.annotations ={ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  } else if (tool.name === 'fetch_web_documentation') {
+    tool.annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
   }
+}
+// Directories (e.g. OpenAI's) reject tools missing any of the four boolean hints.
+// Any tool not classified above gets conservative defaults: treated as a possibly
+// destructive, non-idempotent action so clients keep asking before running it.
+const HINT_DEFAULTS = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
+for (const tool of tools) {
+  const a = tool.annotations || {};
+  for (const [hint, value] of Object.entries(HINT_DEFAULTS)) {
+    if (typeof a[hint] !== 'boolean') a[hint] = value;
+  }
+  tool.annotations = a;
 }
 
 const prompts = [
@@ -1239,8 +1670,20 @@ const prompts = [
     name: 'bridge_instructions',
     description: 'Bridge autonomous software engineering instructions.',
     arguments: []
+  },
+  {
+    name: 'resume_session',
+    description: 'Continue earlier work: Bridge instructions plus the latest context checkpoint for this project.',
+    arguments: []
   }
 ];
+
+const contextCompactor = createContextCompactor({
+  getRoot: () => rootDir,
+  getPlan: () => currentPlan,
+  getJobs: () => Array.from(backgroundJobs.values()).map(j => j.record),
+  budgetTokens: Number.isFinite(contextBudgetFromCli) ? contextBudgetFromCli : undefined
+});
 
 function getHarnessInstructions() {
   return `You are operating as an autonomous software engineering agent running inside the Bridge local coding harness environment.
@@ -1271,7 +1714,8 @@ RULES:
     auto: 'Bridge asks the user only for actions it cannot undo (shell deletes of source files, destructive git, secret files, new folders). delete_file and deleting build/cache folders run without asking.'
   }[approvalMode]} Prefer "delete_file" for deletes (recoverable from the Bridge trash). If something is denied, do not retry it; continue another way or ask the user.
 7. Safety Policy: Commands that damage the system (disk formatting, shutdown, registry or security changes, privilege elevation, piping downloads into a shell, encoded payloads) are blocked. Do not try to work around a blocked command.
-8. pwsh runs PowerShell, execute_command runs the default system shell (cmd.exe on Windows).`;
+8. pwsh runs PowerShell, execute_command runs the default system shell (cmd.exe on Windows).
+9. Context: Bridge meters the tool output in this chat. When a tool result ends with "[Bridge context notice]", call "compact_context" with a thorough summary (goal, decisions, progress, next steps), then rely on that checkpoint instead of earlier output. If the user wants to continue earlier work in a new chat, call "resume_context" first.`;
 }
 
 // ==========================================
@@ -1295,27 +1739,106 @@ async function handleToolCall(name, args) {
       await enforceCommandPolicy(cmd, ctx, false);
 
       const timeoutMs = Math.min(Math.max(5, (args.timeout_seconds || 60)) * 1000, 180000);
-
-      // The pwsh tool must actually run PowerShell (exec defaults to cmd.exe on Windows).
-      const execOptions = {
-        cwd: rootDir,
-        timeout: timeoutMs,
-        maxBuffer: 1024 * 1024 * 4,
-        windowsHide: true
-      };
-      if (name === 'pwsh') {
-        execOptions.shell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh';
-      }
+      const maxBuffer = 1024 * 1024 * 4;
+      const cmdId = `cmd-${nextCmdId++}`;
+      const shellOpt = name === 'pwsh'
+        ? (process.platform === 'win32' ? 'powershell.exe' : 'pwsh')
+        : true;
 
       return new Promise((resolve) => {
-        exec(cmd, execOptions, (error, stdout, stderr) => {
-          const exitCode = error ? (error.code !== undefined ? error.code : 1) : 0;
+        const proc = spawn(cmd, {
+          cwd: rootDir,
+          shell: shellOpt,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          detached: process.platform !== 'win32'
+        });
+
+        const procEntry = {
+          id: cmdId,
+          command: cmd,
+          cwd: rootDir,
+          background: false,
+          pid: proc.pid || null,
+          proc,
+          startTime: Date.now(),
+          endTime: null,
+          status: 'running',
+          code: null,
+          signal: null,
+          outputRing: [],
+          partialLine: '',
+          exitEmitted: false,
+          stoppedByUser: false
+        };
+        activeProcesses.set(cmdId, procEntry);
+        emitActivity({
+          kind: 'cmd-start',
+          id: cmdId,
+          command: cmd,
+          cwd: rootDir,
+          background: false,
+          pid: proc.pid || null
+        });
+
+        if (proc.stdin) proc.stdin.on('error', () => {});
+
+        let stdout = '';
+        let stderr = '';
+        let stdoutBytes = 0;
+        let stderrBytes = 0;
+        let settled = false;
+        let timedOut = false;
+
+        const finish = (exitCode, extraErr) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
           let output = '';
           if (stdout && stdout.trim()) output += `STDOUT:\n${stdout.trim()}\n`;
-          if (stderr && stderr.trim()) output += `STDERR:\n${stderr.trim()}\n`;
+          const combinedErr = extraErr ? (stderr ? `${stderr}\n${extraErr}` : extraErr) : stderr;
+          if (combinedErr && combinedErr.trim()) output += `STDERR:\n${combinedErr.trim()}\n`;
           if (!output) output = '(Command exited with no output)';
-
           resolve(`[Bridge Execution]\nCommand: ${cmd}\nExit Code: ${exitCode}\nDirectory: ${rootDir}\n\n${output.trim()}`);
+        };
+
+        const timer = setTimeout(() => {
+          timedOut = true;
+          killProcessTree(proc);
+          emitCmdExit(procEntry, null, 'SIGTERM', 'timeout');
+          finish(1, `Command timed out after ${Math.round(timeoutMs / 1000)}s.`);
+        }, timeoutMs);
+
+        proc.stdout.on('data', (chunk) => {
+          const text = chunk.toString('utf8');
+          if (stdoutBytes < maxBuffer) {
+            stdout += text;
+            stdoutBytes += chunk.length;
+          }
+          emitProcOutput(procEntry, 'out', text);
+        });
+
+        proc.stderr.on('data', (chunk) => {
+          const text = chunk.toString('utf8');
+          if (stderrBytes < maxBuffer) {
+            stderr += text;
+            stderrBytes += chunk.length;
+          }
+          emitProcOutput(procEntry, 'err', text);
+        });
+
+        proc.on('error', (err) => {
+          emitCmdExit(procEntry, 1, null, 'error');
+          finish(1, err.message);
+        });
+
+        proc.on('close', (code, signal) => {
+          if (!procEntry.exitEmitted) {
+            const st = procEntry.stoppedByUser ? 'stopped' : (timedOut ? 'timeout' : 'exited');
+            emitCmdExit(procEntry, code, signal, st);
+          }
+          const exitCode = code !== null && code !== undefined ? code : 1;
+          finish(exitCode, procEntry.stoppedByUser ? 'Stopped by user.' : null);
         });
       });
     }
@@ -1340,12 +1863,15 @@ async function handleToolCall(name, args) {
         pruneFinishedJobs();
 
         const jobId = nextJobId++;
+        const activityId = `job-${jobId}`;
         const proc = spawn(cmd, {
           cwd: rootDir,
           shell: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
           detached: process.platform !== 'win32' // own process group on Unix so stop kills children too
         });
+        if (proc.stdin) proc.stdin.on('error', () => {});
 
         const jobRecord = {
           id: jobId,
@@ -1355,22 +1881,58 @@ async function handleToolCall(name, args) {
           logs: []
         };
 
+        const procEntry = {
+          id: activityId,
+          command: cmd,
+          cwd: rootDir,
+          background: true,
+          pid: proc.pid || null,
+          proc,
+          jobRecord,
+          startTime: Date.now(),
+          endTime: null,
+          status: 'running',
+          code: null,
+          signal: null,
+          outputRing: [],
+          partialLine: '',
+          exitEmitted: false,
+          stoppedByUser: false
+        };
+        activeProcesses.set(activityId, procEntry);
+        emitActivity({
+          kind: 'cmd-start',
+          id: activityId,
+          command: cmd,
+          cwd: rootDir,
+          background: true,
+          pid: proc.pid || null
+        });
+
         proc.stdout.on('data', d => {
-          jobRecord.logs.push(d.toString().slice(-8000));
+          const text = d.toString('utf8');
+          jobRecord.logs.push(text.slice(-8000));
           if (jobRecord.logs.length > 50) jobRecord.logs.shift();
+          emitProcOutput(procEntry, 'out', text);
         });
         proc.stderr.on('data', d => {
-          jobRecord.logs.push(d.toString().slice(-8000));
+          const text = d.toString('utf8');
+          jobRecord.logs.push(text.slice(-8000));
           if (jobRecord.logs.length > 50) jobRecord.logs.shift();
+          emitProcOutput(procEntry, 'err', text);
         });
-        proc.on('exit', code => {
+        proc.on('close', (code, signal) => {
           if (jobRecord.status === 'running') jobRecord.status = `exited with code ${code}`;
           jobRecord.endTime = Date.now();
+          if (!procEntry.exitEmitted) {
+            emitCmdExit(procEntry, code, signal, procEntry.stoppedByUser ? 'stopped' : 'exited');
+          }
         });
         proc.on('error', err => {
           // Without this handler a failed spawn would crash the whole server.
           jobRecord.status = `failed to start: ${err.message}`;
           jobRecord.endTime = Date.now();
+          emitCmdExit(procEntry, 1, null, 'error');
         });
 
         backgroundJobs.set(jobId, { proc, record: jobRecord });
@@ -1388,8 +1950,14 @@ async function handleToolCall(name, args) {
         const jobId = args.job_id;
         const job = backgroundJobs.get(jobId);
         if (!job) throw new Error(`Job #${jobId} not found.`);
+        const entry = activeProcesses.get(`job-${jobId}`);
+        if (entry) entry.stoppedByUser = true;
         const ok = killProcessTree(job.proc);
-        job.record.status = ok ? 'stopped' : job.record.status;
+        if (ok) {
+          job.record.status = 'stopped';
+          job.record.endTime = Date.now();
+          if (entry) emitCmdExit(entry, null, 'SIGTERM', 'stopped');
+        }
         return ok ? `Job #${jobId} and its child processes were stopped.` : `Could not stop job #${jobId}.`;
       } else {
         const jobId = args.job_id;
@@ -1506,6 +2074,7 @@ async function handleToolCall(name, args) {
       const updated = literalReplace(content, target, replacement, replaceAll);
       saveSnapshot(resolved, content);
       atomicWriteFile(resolved, updated);
+      recordAndEmitFileChange({ op: 'modify', resolved, tool: name, before: content, after: updated });
       return replaceAll
         ? `The file ${filePath} has been updated. All occurrences were successfully replaced.`
         : `The file ${filePath} has been updated successfully. (Snapshot saved. Can revert with revert_file).`;
@@ -1538,10 +2107,14 @@ async function handleToolCall(name, args) {
         const resolved = validateAndResolve(filePath, true);
         assertWritable(resolved);
         await gate(ctx, 'write', 'Create file', path.relative(rootDir, resolved), 'creates or overwrites a file');
+        let before = null;
         if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
-          saveSnapshot(resolved, fs.readFileSync(resolved, 'utf-8'));
+          before = fs.readFileSync(resolved, 'utf-8');
+          saveSnapshot(resolved, before);
         }
-        atomicWriteFile(resolved, args.file_text || '');
+        const newContent = args.file_text || '';
+        atomicWriteFile(resolved, newContent);
+        recordAndEmitFileChange({ op: before !== null ? 'modify' : 'create', resolved, tool: 'str_replace_editor', before, after: newContent });
         return `File created successfully at: ${filePath}`;
       } else if (cmd === 'str_replace') {
         const resolved = validateAndResolve(filePath);
@@ -1553,8 +2126,10 @@ async function handleToolCall(name, args) {
         if (!content.includes(oldStr)) throw new Error(`old_str not found in ${filePath}`);
         assertWritable(resolved);
         await gate(ctx, 'write', 'Edit file', path.relative(rootDir, resolved), 'changes a file (undo with revert_file)');
+        const updated = literalReplace(content, oldStr, newStr, false);
         saveSnapshot(resolved, content);
-        atomicWriteFile(resolved, literalReplace(content, oldStr, newStr, false));
+        atomicWriteFile(resolved, updated);
+        recordAndEmitFileChange({ op: 'modify', resolved, tool: 'str_replace_editor', before: content, after: updated });
         return `The file ${filePath} has been updated successfully.`;
       } else if (cmd === 'insert') {
         const resolved = validateAndResolve(filePath);
@@ -1566,8 +2141,10 @@ async function handleToolCall(name, args) {
         lines.splice(lineNum, 0, ...String(args.new_str || '').split(/\r?\n/));
         assertWritable(resolved);
         await gate(ctx, 'write', 'Insert into file', path.relative(rootDir, resolved), 'changes a file (undo with revert_file)');
+        const updated = lines.join(eol);
         saveSnapshot(resolved, content);
-        atomicWriteFile(resolved, lines.join(eol));
+        atomicWriteFile(resolved, updated);
+        recordAndEmitFileChange({ op: 'modify', resolved, tool: 'str_replace_editor', before: content, after: updated });
         return `Inserted content into ${filePath} at line ${lineNum}.`;
       } else {
         throw new Error(`Unknown str_replace_editor command: ${cmd}`);
@@ -1581,12 +2158,16 @@ async function handleToolCall(name, args) {
         throw new Error(`No undo snapshots available for "${args.path}".`);
       }
       await gate(ctx, 'write', 'Revert file', path.relative(rootDir, resolved), 'restores an earlier version of a file');
+      const before = fs.existsSync(resolved) && fs.statSync(resolved).isFile()
+        ? fs.readFileSync(resolved, 'utf-8')
+        : null;
       const previous = popSnapshot(resolved);
       if (previous === null) {
         throw new Error(`No undo snapshots available for "${args.path}".`);
       }
 
       atomicWriteFile(resolved, previous);
+      recordAndEmitFileChange({ op: 'revert', resolved, tool: 'revert_file', before, after: previous });
       const remaining = (fileBackups.get(resolved) || []).length;
       return `Successfully reverted "${args.path}" to previous snapshot. (${remaining} snapshots remaining).`;
     }
@@ -1650,6 +2231,12 @@ async function handleToolCall(name, args) {
         return 'Current Plan Status:\n' + currentPlan.map(p => `[${p.completed ? 'x' : ' '}] ${p.id}. ${p.task}`).join('\n');
       }
     }
+
+    // --- 7b. Context Compaction ---
+    case 'compact_context':
+      return contextCompactor.compact(args);
+    case 'resume_context':
+      return contextCompactor.resume(args);
 
     // --- 8. Core Filesystem Tools ---
     case 'select_project_folder': {
@@ -1854,12 +2441,22 @@ async function handleToolCall(name, args) {
 
       // Save undo snapshot if file exists
       const existedBefore = fs.existsSync(resolved);
+      let beforeContent = null;
       if (existedBefore) {
         if (fs.statSync(resolved).isDirectory()) throw new Error(`"${filePath}" is a directory.`);
-        saveSnapshot(resolved, fs.readFileSync(resolved, 'utf-8'));
+        beforeContent = fs.readFileSync(resolved, 'utf-8');
+        saveSnapshot(resolved, beforeContent);
       }
 
-      atomicWriteFile(resolved, args.content !== undefined ? String(args.content) : '');
+      const newContent = args.content !== undefined ? String(args.content) : '';
+      atomicWriteFile(resolved, newContent);
+      recordAndEmitFileChange({
+        op: existedBefore ? 'modify' : 'create',
+        resolved,
+        tool: name,
+        before: beforeContent,
+        after: newContent
+      });
       const stat = fs.statSync(resolved);
       return `<path>${filePath}</path>\n<type>file</type>\n<content>\n${existedBefore ? 'Updated' : 'Created'} file (${stat.size} bytes)\n</content>`;
     }
@@ -1910,6 +2507,13 @@ async function handleToolCall(name, args) {
 
       const results = applied.map(a => {
         if (a.before !== null) saveSnapshot(a.resolved, a.before);
+        recordAndEmitFileChange({
+          op: a.before !== null ? 'modify' : 'create',
+          resolved: a.resolved,
+          tool: name,
+          before: a.before,
+          after: a.content
+        });
         return `- ${a.filePath} (${Buffer.byteLength(a.content)} bytes)`;
       });
       return `Successfully wrote ${results.length} files:\n${results.join('\n')}`;
@@ -1934,11 +2538,27 @@ async function handleToolCall(name, args) {
 
       assertWritable(resolved);
       // Keep a text snapshot so revert_file can bring a deleted file back.
-      if (!isDir && !isBinaryFile(resolved) && stat.size <= MAX_READ_BYTES) {
-        saveSnapshot(resolved, fs.readFileSync(resolved, 'utf-8'));
+      let deletedBefore = null;
+      let oversized = false;
+      if (!isDir && !isBinaryFile(resolved)) {
+        if (stat.size <= MAX_READ_BYTES) {
+          deletedBefore = fs.readFileSync(resolved, 'utf-8');
+          saveSnapshot(resolved, deletedBefore);
+        } else {
+          oversized = true;
+        }
       }
       // Move to Bridge's trash instead of erasing, so any delete (binary, folders) can be recovered.
       const trashPath = moveToTrash(resolved);
+      recordAndEmitFileChange({
+        op: 'delete',
+        resolved,
+        tool: 'delete_file',
+        before: oversized ? 'x'.repeat(MAX_DIFF_BYTES + 1) : deletedBefore,
+        after: null,
+        isDir,
+        skipCounts: isDir || (!oversized && deletedBefore === null)
+      });
       logInfo(`Deleted with user approval: ${resolved} -> ${trashPath}`);
       return isDir
         ? `Deleted folder "${filePath}" (approved by user). A copy is kept in the Bridge trash: ${trashPath}`
@@ -2063,13 +2683,18 @@ async function processJsonRpcMessage(msg) {
 
   if (method === 'tools/call') {
     const { name, arguments: toolArgs } = params || {};
+    // Meter tool traffic for auto-compaction; never let metering break a tool call.
+    const withContextNotice = (text, isError) => {
+      try { return text + contextCompactor.recordCall(name, toolArgs, text, isError); } catch (e) { return text; }
+    };
     try {
       const resultText = await handleToolCall(name, toolArgs);
+      const text = typeof resultText === 'string' ? resultText : JSON.stringify(resultText);
       return {
         jsonrpc: '2.0',
         id,
         result: {
-          content: [{ type: 'text', text: typeof resultText === 'string' ? resultText : JSON.stringify(resultText) }],
+          content: [{ type: 'text', text: withContextNotice(text, false) }],
           isError: false
         }
       };
@@ -2078,7 +2703,7 @@ async function processJsonRpcMessage(msg) {
         jsonrpc: '2.0',
         id,
         result: {
-          content: [{ type: 'text', text: `Error: ${err.message}` }],
+          content: [{ type: 'text', text: withContextNotice(`Error: ${err.message}`, true) }],
           isError: true
         }
       };
@@ -2090,6 +2715,16 @@ async function processJsonRpcMessage(msg) {
   }
 
   if (method === 'prompts/get') {
+    if (params && params.name === 'resume_session') {
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          description: 'Resume from the latest Bridge context checkpoint',
+          messages: [{ role: 'user', content: { type: 'text', text: `${getHarnessInstructions()}\n\n${contextCompactor.resume({})}` } }]
+        }
+      };
+    }
     return {
       jsonrpc: '2.0',
       id,
@@ -2386,6 +3021,8 @@ function startHttpServer(port) {
           approvedSandboxFolders.add(rootDir.toLowerCase()); // chosen by the user with [D]
           currentPlan = [];
           fileBackups.clear();
+          resetSessionFileChanges();
+          emitActivity({ kind: 'project-changed', root: rootDir });
           logInfo(`Switched project directory via CLI to: ${rootDir}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, activeProject: rootDir }));
@@ -2498,8 +3135,11 @@ function startHttpServer(port) {
         }
 
         const isErr = response && response.result && response.result.isError;
-        const status = response ? (isErr ? 'TOOL-ERROR' : 'OK') + (streamReply ? ' (sse)' : '') : '204';
-        const rpcLog = `[MCP-RPC] ${new Date().toISOString()} method: ${(msg && msg.method) || 'unknown'}${toolName ? ' "' + toolName + '"' : ''} (id: ${msg && msg.id}) -> response: ${status} in ${fmtDuration(Date.now() - startedAt)}${clientGone ? ' [client already gone]' : ''}\n`;
+        const isRpcErr = Boolean(response && response.error);
+        const status = response ? (isErr ? 'TOOL-ERROR' : isRpcErr ? 'RPC-ERROR' : 'OK') + (streamReply ? ' (sse)' : '') : '204';
+        const errDetail = isErr ? errorSummaryForLog(response.result.content && response.result.content[0] && response.result.content[0].text)
+          : isRpcErr ? errorSummaryForLog(response.error.message) : '';
+        const rpcLog = `[MCP-RPC] ${new Date().toISOString()} method: ${(msg && msg.method) || 'unknown'}${toolName ? ' "' + toolName + '"' : ''} (id: ${msg && msg.id}) -> response: ${status} in ${fmtDuration(Date.now() - startedAt)}${clientGone ? ' [client already gone]' : ''}${errDetail ? ' :: ' + errDetail : ''}\n`;
         appendRequestLog(rpcLog);
 
         if (streamReply) {

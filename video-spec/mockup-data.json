@@ -1,0 +1,171 @@
+{
+  "product": {
+    "name": "Bridge",
+    "package": "@markmayandi/bridge",
+    "version": "1.0.10",
+    "author": "Manimaran",
+    "tagline": "Universal Local-to-Web AI Coding Harness",
+    "github": "https://github.com/Manimaran-tech/bridge",
+    "theme": {
+      "accentVolt": "#D2FF00",
+      "accentCyan": "#50C8FF",
+      "bgDark": "#0B0C0E",
+      "cardDark": "#141720",
+      "borderDark": "#262B38",
+      "textWhite": "#F0F2F8",
+      "textMuted": "#8E92A4",
+      "errorRed": "#EF4444",
+      "successGreen": "#10B981"
+    }
+  },
+  "scene1_pain": {
+    "fileUpload": {
+      "fileName": "auth-service.ts",
+      "fileSize": "14.2 KB",
+      "lineCount": 248,
+      "dragTarget": "Claude Web / ChatGPT Prompt"
+    },
+    "buggySnippet": [
+      "// auth-service.ts: line 42",
+      "export async function verifySession(token: string) {",
+      "  const decoded = jwt.decode(token); // WARNING: signature not verified!",
+      "  if (!decoded || decoded.exp < Date.now()) {",
+      "    throw new Error('Invalid or expired token');",
+      "  }",
+      "  return db.users.findById(decoded.userId); // CRASHES: undefined property",
+      "}"
+    ],
+    "hallucinatedResponse": {
+      "aiName": "Web AI Assistant",
+      "text": "Here is the fixed function. Make sure to copy-paste this into your local file and install jsonwebtoken if you haven't!",
+      "codeBlock": "export async function verifySession(token: string) {\n  // Fixed token verification\n  const secret = process.env.JWT_SECRET || 'fallback';\n  return jwt.verify(token, secret, (err, decoded) => {\n    if (err) throw err;\n    return db.users.findOne({ _id: decoded.id });\n  });\n}"
+    },
+    "terminalError": {
+      "command": "npm test",
+      "output": [
+        "TypeError: db.users.findOne is not a function",
+        "    at verifySession (c:/app/src/auth-service.ts:48:21)",
+        "    at runTest (c:/app/tests/auth.test.ts:19:11)",
+        "FAIL tests/auth.test.ts",
+        "  ✕ verifySession returns active user (42ms)",
+        "",
+        "Test Suites: 1 failed, 1 total",
+        "Tests:       1 failed, 1 total",
+        "Snapshots:   0 total",
+        "Time:        1.24s"
+      ]
+    },
+    "loopPains": [
+      "Copy code snippet from browser...",
+      "Alt-Tab to VS Code...",
+      "Paste over line 40-65...",
+      "Alt-Tab to terminal...",
+      "Run npm test -> SyntaxError!",
+      "Copy stack trace...",
+      "Alt-Tab to browser...",
+      "Paste error back into chat...",
+      "Repeat 10 times in pure frustration!"
+    ],
+    "punchline": "STOP COPY-PASTING CODE."
+  },
+  "scene2_solution": {
+    "headline": "INTRODUCING BRIDGE",
+    "subheadline": "Universal Local-to-Web AI Coding Harness",
+    "installCommands": {
+      "global": "npm install -g @markmayandi/bridge",
+      "npx": "npx @markmayandi/bridge",
+      "start": "bridge ."
+    },
+    "supportedAIs": [
+      { "name": "Claude Web", "badge": "Custom MCP", "color": "#D97757" },
+      { "name": "ChatGPT Web", "badge": "Custom Actions", "color": "#10A37F" },
+      { "name": "Google Gemini", "badge": "MCP Extension", "color": "#50C8FF" },
+      { "name": "DeepSeek", "badge": "Local Harness", "color": "#4D88FF" }
+    ],
+    "keyFeatures": [
+      "Zero open router ports",
+      "Instant Cloudflare Anycast tunnel",
+      "Strict Folder Jail (Zero parent directory escape)",
+      "Native read, edit & terminal test tools"
+    ]
+  },
+  "scene3_terminal": {
+    "asciiArtTitle": [
+      "██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗",
+      "██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝",
+      "██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗  ",
+      "██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝  ",
+      "██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗",
+      "╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝"
+    ],
+    "bootSequence": [
+      { "time": "0.1s", "text": "Starting Bridge daemon v1.0.10..." },
+      { "time": "0.4s", "text": "Mounting sandboxed folder jail: c:/projects/my-app" },
+      { "time": "0.8s", "text": "Local MCP server listening on 127.0.0.1:3000" },
+      { "time": "1.2s", "text": "Establishing Cloudflare Anycast Quantum Tunnel..." },
+      { "time": "1.9s", "text": "Allocated public endpoint: https://quantum-edge-842.trycloudflare.com/mcp" },
+      { "time": "2.1s", "text": "✓ [COPIED] MCP URL copied to clipboard automatically!" }
+    ],
+    "dashboardState": {
+      "status": "ONLINE",
+      "project": "c:/tmp/interview",
+      "jailed": "STRICTLY ENFORCED (Zero parent traversal)",
+      "mcpUrl": "https://quantum-edge-842.trycloudflare.com/mcp",
+      "keys": [
+        { "key": "[C]", "label": "Copy URL" },
+        { "key": "[D]", "label": "Switch Folder" },
+        { "key": "[L]", "label": "Live Logs" },
+        { "key": "[Q]", "label": "Quit" }
+      ]
+    }
+  },
+  "scene4_connection": {
+    "modalData": {
+      "title": "Add Custom MCP Server",
+      "serverName": "Bridge",
+      "url": "https://quantum-edge-842.trycloudflare.com/mcp",
+      "status": "CONNECTED (7 Tools Ready)"
+    },
+    "chatPrompt": "@bridge fix the auth token validation bug in server.js and run the test suite to verify",
+    "permissionDialog": {
+      "title": "Tool Permission Requested",
+      "app": "Bridge MCP Gateway",
+      "jailPath": "c:/tmp/interview",
+      "tools": [
+        "edit_file(server.js)",
+        "pwsh(\"node --test secure-folder-mcp/server.js\")"
+      ],
+      "button": "Allow for Session"
+    }
+  },
+  "scene5_execution": {
+    "liveTrafficLogs": [
+      { "time": "12:04:15", "type": "RPC_REQ", "text": "--> tools/call: read_file({\"path\": \"server.js\"})" },
+      { "time": "12:04:16", "type": "RPC_RES", "text": "<-- tools/call: 1,544 lines loaded (24KB)" },
+      { "time": "12:04:17", "type": "RPC_REQ", "text": "--> tools/call: edit_file({\"path\": \"server.js\", \"fix\": \"validateToken\"})" },
+      { "time": "12:04:18", "type": "RPC_RES", "text": "<-- tools/call: file patched cleanly with atomic backup" },
+      { "time": "12:04:19", "type": "RPC_REQ", "text": "--> tools/call: pwsh({\"command\": \"npm test\"})" },
+      { "time": "12:04:21", "type": "RPC_RES", "text": "<-- stdout: ✔ 14 tests passed (0 failed) in 320ms" }
+    ],
+    "codeDiff": [
+      { "type": "del", "line": "-   const decoded = jwt.decode(token);" },
+      { "type": "del", "line": "-   return db.users.findById(decoded.userId);" },
+      { "type": "add", "line": "+   const verified = jwt.verify(token, process.env.JWT_SECRET);" },
+      { "type": "add", "line": "+   return await db.users.findOne({ id: verified.sub });" }
+    ],
+    "testResults": {
+      "passed": 14,
+      "failed": 0,
+      "duration": "320ms",
+      "status": "SUCCESS"
+    },
+    "finalChatResponse": "I analyzed server.js, patched the JWT token verification to prevent unverified decoding, and ran your test suite. All 14 tests pass on your local machine!",
+    "cta": {
+      "headline": "CONNECT YOUR CODE IN SECONDS",
+      "installCommand": "npx @markmayandi/bridge",
+      "globalCommand": "npm i -g @markmayandi/bridge",
+      "githubRepo": "github.com/Manimaran-tech/bridge",
+      "tag": "⭐ Star on GitHub"
+    }
+  }
+}

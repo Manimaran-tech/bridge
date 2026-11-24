@@ -31,3 +31,7 @@ desktop.ini
 # Local Internal Notes & Strategy
 GROWTH_STRATEGY.md
 *.local.md
+
+# Local tooling & rendered video output (large files)
+.claude/
+bridge-video/out/
