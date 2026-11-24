@@ -243,7 +243,7 @@ Press `[M]` in the dashboard (or launch with `--mode=<mode>`) to choose when Bri
 
 When Bridge asks, the request appears in the dashboard with the full command. Press `[Y]` to approve or `[N]` to deny. Unanswered requests are denied automatically after 90 seconds.
 
-**Always blocked:** disk formatting, shutdown/reboot, `sudo`/`runas`, registry and boot configuration edits, user and service changes, disabling Defender or the firewall, scheduled tasks, piping downloads into a shell (`curl … | sh`, `iwr … | iex`), encoded PowerShell, and changes to system folders.
+**Always blocked:** disk formatting, shutdown/reboot, `sudo`/`runas`, registry and boot configuration edits, user and service changes, disabling Defender or the firewall, scheduled tasks, piping downloads into a shell (`curl … | sh`, `iwr … | iex`), decoding base64 straight into a shell (`base64 -d … | sh`, `FromBase64String … | iex`), encoded PowerShell, and changes to system folders.
 
 **Switching folders:** an AI can move to another project folder when you ask it to. Drive roots, your home folder and system folders are always refused. Depending on the mode, Bridge asks you first.
 

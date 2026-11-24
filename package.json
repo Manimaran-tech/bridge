@@ -23,7 +23,8 @@
     "test:docker": "node --test secure-folder-mcp/test_docker.js",
     "test:context": "node --test secure-folder-mcp/test_context.js",
     "test:activity": "node --test secure-folder-mcp/test_activity.js",
-    "test:attach": "node --test secure-folder-mcp/test_attach_input.js"
+    "test:attach": "node --test secure-folder-mcp/test_attach_input.js",
+    "test:policy": "node --test secure-folder-mcp/test_command_policy.js"
   },
   "keywords": [
     "mcp",

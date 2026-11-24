@@ -159,6 +159,9 @@ const BLOCKED_COMMANDS = [
   { re: /\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n]*\|\s*(sh|bash|zsh|python\d*|node|iex|invoke-expression|pwsh|powershell)\b/i, why: 'pipes downloaded code into a shell' },
   { re: /\b(iex|invoke-expression)\b[^\n]*\b(downloadstring|iwr|irm|invoke-webrequest|invoke-restmethod|net\.webclient)\b/i, why: 'runs downloaded code' },
   { re: /\b(powershell|pwsh)(\.exe)?\b[^\n]*\s-(e|ec|enc|encodedcommand)\s+[a-z0-9+\/=]{8,}/i, why: 'runs a hidden (encoded) PowerShell payload' },
+  // Decoding a base64 blob straight into an interpreter hides what actually runs.
+  { re: /(\bbase64\b[^|\n]*\s(-d|--decode)\b|\bopenssl\b(?=[^|\n]*\bbase64\b)[^|\n]*\s-d\b)[^\n]*\|\s*(sh|bash|zsh|dash|ksh|python\d*|node|perl|ruby|php|iex|invoke-expression|pwsh|powershell)\b/i, why: 'decodes a hidden (base64) payload and runs it' },
+  { re: /\b(iex|invoke-expression)\b[^\n]*frombase64string|frombase64string[^\n]*\|\s*(iex|invoke-expression)\b/i, why: 'decodes a hidden (base64) payload and runs it' },
   { re: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, why: 'fork bomb' },
   { re: /\bchmod\s+(-R\s+)?[0-7]*777\s+\/(\s|$)/i, why: 'opens permissions on the filesystem root' },
   { re: /[a-z]:\\(windows|program files( \(x86\))?|programdata)\\?/i, why: 'touches Windows system folders', onlyIfMutating: true },
