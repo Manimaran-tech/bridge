@@ -819,11 +819,19 @@ function validateAndResolve(requestedPath, allowNonExistent = false) {
   if (!isInsideRoot(real)) {
     throw new Error(`Security Violation: Path "${requestedPath}" resolves outside the sandboxed project folder (${real}).`);
   }
+
+  // Rebuild the path from the symlink-resolved prefix (instead of trusting the
+  // unresolved `resolved`) and re-check it, so a symlink anywhere in the verified
+  // prefix cannot be used to make the final path escape rootDir.
+  const finalResolved = path.join(real, path.relative(probe, resolved));
+  if (!isInsideRoot(finalResolved)) {
+    throw new Error(`Security Violation: Path "${requestedPath}" resolves outside the sandboxed project folder (${finalResolved}).`);
+  }
   if (exists && isSensitiveName(path.basename(real))) {
     throw new Error(`Security Violation: Access to sensitive file "${path.basename(real)}" is blocked by security policy.`);
   }
 
-  return resolved;
+  return finalResolved;
 }
 
 function isInsideRoot(absPath) {
