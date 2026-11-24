@@ -171,7 +171,8 @@ const DELETE_COMMANDS = [
   { kind: 'delete-shell', re: /\b(remove-item|clear-content|clear-item)\b/i, why: 'deletes files or folders' },
   { kind: 'delete-other', re: /\bfind\b[^|;&]*\s-(delete|exec\s+rm)\b/i, why: 'deletes files found by find' },
   { kind: 'git-destructive', re: /\bgit\s+(rm\b|clean\b|reset\s+[^|;&]*--hard|checkout\s+[^|;&]*--\s|restore\b|stash\s+(drop|clear)\b|branch\s+[^|;&]*-D\b|push\s+[^|;&]*(--force|-f\b|--delete|:))/i, why: 'discards git work or deletes branches' },
-  { kind: 'delete-other', re: /\b(rmtree|os\.remove|os\.unlink|os\.rmdir|shutil\.rmtree|rimraf|del-cli)\b|\.(rmSync|rmdirSync|unlinkSync|rm|rmdir|unlink)\s*\(/i, why: 'deletes files from an inline script' },
+  { kind: 'delete-other', re: /\b(rmtree|os\.remove|os\.unlink|os\.rmdir|shutil\.rmtree|rimraf|del-cli)\b|\.(rmSync|rmdirSync|unlinkSync|rm|rmdir|unlink)\s*\(|\bgetattr\s*\(\s*(os|shutil)\s*,|require\s*\(\s*['"][^'"]*['"]\s*\+|\[\s*['"][^'"]{1,12}['"]\s*\+\s*['"][^'"]{1,12}['"]\s*\]\s*\(/i, why: 'deletes files from an inline script (including obfuscated calls)' },
+  { kind: 'delete-other', re: /\bbase64\b[^\n]*(-d|--decode)\b[^\n]*\|\s*(sh|bash|zsh|python\d*|node|pwsh|powershell)\b/i, why: 'decodes and runs a hidden payload' },
   // Secrets: file tools refuse these names, so shell access to them needs the user's OK too.
   { kind: 'secret', re: /(^|[\s"'\\/=:])\.env(\.[\w.-]+)?(\s|["']|$)|\bid_(rsa|ed25519|ecdsa|dsa)\b|(^|[\s"'\\/])[\w.-]+\.(pem|key|pfx|p12)(\s|["']|$)|\bcredentials\.json\b|\.ssh[\\/]|\.aws[\\/]credentials|\.npmrc\b|\.git-credentials\b/i, why: 'reads or touches a secrets/credentials file' },
   { kind: 'secret', re: /\b(printenv|Get-ChildItem\s+env:|gci\s+env:|ls\s+env:|dir\s+env:)|^\s*(set|env)\s*$/i, why: 'prints all environment variables (may contain secrets)' }
