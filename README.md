@@ -13,7 +13,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 <p align="center">
-  <b>English</b> | <a href="./README_zh.md">ç®€ä½“ä¸­æ–‡</a>
+  <b>English</b> | <a href="./README_zh.md">简体中文</a>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 <p align="center">
   <img src="./images/bridge-demo.gif" alt="Bridge demo: install, run bridge, pick a project folder, get the MCP URL" width="820" />
   <br />
-  <sub>Install â†’ run <code>bridge</code> â†’ pick a project â†’ copy your MCP URL (<a href="./images/bridge-demo.mp4">MP4 version</a>)</sub>
+  <sub>Install → run <code>bridge</code> → pick a project → copy your MCP URL (<a href="./images/bridge-demo.mp4">MP4 version</a>)</sub>
 </p>
 
 ---
@@ -155,7 +155,7 @@ Bridge features built-in zero-trust security:
 
 By default Bridge uses an ephemeral quick tunnel. If you want a stable, permanent domain, create a named Cloudflare tunnel and configure Bridge with its token:
 
-1. In **Cloudflare Zero Trust â†’ Networks â†’ Tunnels**, create a named tunnel and copy its token.
+1. In **Cloudflare Zero Trust → Networks → Tunnels**, create a named tunnel and copy its token.
 2. Add a **Public Hostname** for that tunnel pointing to `http://localhost:3000`.
 3. Run the one-time interactive setup:
 
@@ -187,7 +187,7 @@ No legacy JSON configuration files or manual port forwarding required.
 
 > **Gemini: use Task, not Chat.** Start your Bridge work in a Gemini **Task** instead of a normal **Chat**. Multi-step coding work with Bridge's tools runs more reliably in a Task.
 >
-> **Gemini tip:** Gemini shows its own "Let Gemini use â€¦?" card before tool calls. This is Gemini's permission system, separate from Bridge's approval modes. To stop the cards, open **Gemini â†’ Customize â†’ Connectors â†’ Bridge** ([gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)) and set each action under **App actions** to **Always allow**. A quick tunnel gets a new URL on every restart, so use a [named tunnel](#optional-fixed-mcp-url-cloudflare-named-tunnels) if you want these settings to stick.
+> **Gemini tip:** Gemini shows its own "Let Gemini use …?" card before tool calls. This is Gemini's permission system, separate from Bridge's approval modes. To stop the cards, open **Gemini → Customize → Connectors → Bridge** ([gemini.google.com/customize/connectors](https://gemini.google.com/customize/connectors)) and set each action under **App actions** to **Always allow**. A quick tunnel gets a new URL on every restart, so use a [named tunnel](#optional-fixed-mcp-url-cloudflare-named-tunnels) if you want these settings to stick.
 
 ---
 
@@ -202,7 +202,7 @@ Cloud-based AI models cannot safely access files on your physical machine withou
 * **Long-Running Calls:** Tool replies stream over SSE with keepalives, so long builds and tests survive Cloudflare's 100-second timeout.
 * **Zero-Setup Anycast Tunnel:** Public HTTPS tunneling powered by Cloudflare with automatic SSL and clipboard sync. Run `bridge setup` once if you prefer a fixed named-tunnel URL.
 * **Terminal Dashboard:** Monospaced LN4 Volt interface with live traffic streaming and real-time directory switching. Adapts to any terminal size, from small windows to full screen, and redraws cleanly when you resize or maximize the window, even during the loading screens.
-* **Overview Panel:** Review every change the AI made with diffs and undo, verify files on disk, and watch or stop running commands. Open it with `[S]` or by clicking the `â‰¡` button in the top-right corner.
+* **Overview Panel:** Review every change the AI made with diffs and undo, verify files on disk, and watch or stop running commands. Open it with `[S]` or by clicking the `≡` button in the top-right corner.
 * **Live Tunnel Animation:** While the tunnel starts, a two-lane link shows requests going out and replies coming back through the Cloudflare edge, with a checklist of each startup stage.
 * **Multiple Bridges:** Run several Bridges side by side for different projects. A new Bridge never stops another running Bridge's server; it picks the next free port instead.
 * **Self-Healing Server:** If the MCP server crashes, Bridge restarts it automatically with backoff, and cleans up every child process on exit.
@@ -243,7 +243,7 @@ Press `[M]` in the dashboard (or launch with `--mode=<mode>`) to choose when Bri
 
 When Bridge asks, the request appears in the dashboard with the full command. Press `[Y]` to approve or `[N]` to deny. Unanswered requests are denied automatically after 90 seconds.
 
-**Always blocked:** disk formatting, shutdown/reboot, `sudo`/`runas`, registry and boot configuration edits, user and service changes, disabling Defender or the firewall, scheduled tasks, piping downloads into a shell (`curl â€¦ | sh`, `iwr â€¦ | iex`), encoded PowerShell, and changes to system folders.
+**Always blocked:** disk formatting, shutdown/reboot, `sudo`/`runas`, registry and boot configuration edits, user and service changes, disabling Defender or the firewall, scheduled tasks, piping downloads into a shell (`curl … | sh`, `iwr … | iex`), encoded PowerShell, and changes to system folders.
 
 **Switching folders:** an AI can move to another project folder when you ask it to. Drive roots, your home folder and system folders are always refused. Depending on the mode, Bridge asks you first.
 
@@ -276,17 +276,17 @@ When Bridge asks, the request appears in the dashboard with the full command. Pr
 | `[D]` | Opens the In-Terminal Directory Navigator to switch project folders without restarting. |
 | `[L]` | Toggles real-time streaming traffic and tool execution logs. |
 | `[M]` | Opens the approval mode picker (`1` Turbo, `2` Review, `3` Default, `4` Auto). |
-| `[S]` | Opens the Overview panel (`[R]` Review, `[F]` Files, `[T]` Terminals, `[H]` Help). You can also click the `â‰¡` button in the top-right corner. |
+| `[S]` | Opens the Overview panel (`[R]` Review, `[F]` Files, `[T]` Terminals, `[H]` Help). You can also click the `≡` button in the top-right corner. |
 | `[Y]` / `[N]` | Approves or denies a pending permission request. |
 | `[Q]` | Asks for confirmation (`Y`/`N`), then closes the tunnel, stops all jobs, releases ports, and exits. |
 
 ### Overview Panel
 
-Press `[S]` or click the `â‰¡` button in the dashboard's top-right corner to open the live **Overview** menu (click an item to open it, click elsewhere to close) with session `+added / âˆ’removed` totals, touched file counts, and running process counts:
+Press `[S]` or click the `≡` button in the dashboard's top-right corner to open the live **Overview** menu (click an item to open it, click elsewhere to close) with session `+added / −removed` totals, touched file counts, and running process counts:
 
 * **`[R]` Review:** Inspect every file the AI created, edited, or deleted in the current session with a unified diff, `(edited outside)` detection, `[U]` undo (reuses revert snapshots), and `[O]` open in your default editor.
-* **`[F]` Files:** Verify on disk (`âœ”` exists, `âœ˜` missing, `ðŸ—‘` in trash) that files the AI touched actually exist. Press `[A]` to toggle the full sandboxed project tree or `Enter` to jump to a file's diff.
-* **`[T]` Terminals:** View running and finished commands and background jobs, stop any process tree with `[X]`, or press `Enter` to attach full-screen in Chrome-style tabs (`Ctrl+â†/â†’` switch tab, `Ctrl+W` close, `Ctrl+X` stop, `Ctrl+]` detach, `Ctrl+T` list). Attached terminals provide local line editing and multi-line paste on a bottom prompt line (`Enter` sends the line, `Backspace` deletes, `â†/â†’` moves the cursor, `Ctrl+U` clears the line, `Ctrl+D` flushes any pending text and sends EOF, and `Esc` forwards immediately).
+* **`[F]` Files:** Verify on disk (`✔` exists, `✘` missing, `🗑` in trash) that files the AI touched actually exist. Press `[A]` to toggle the full sandboxed project tree or `Enter` to jump to a file's diff.
+* **`[T]` Terminals:** View running and finished commands and background jobs, stop any process tree with `[X]`, or press `Enter` to attach full-screen in Chrome-style tabs (`Ctrl+←/→` switch tab, `Ctrl+W` close, `Ctrl+X` stop, `Ctrl+]` detach, `Ctrl+T` list). Attached terminals provide local line editing and multi-line paste on a bottom prompt line (`Enter` sends the line, `Backspace` deletes, `←/→` moves the cursor, `Ctrl+U` clears the line, `Ctrl+D` flushes any pending text and sends EOF, and `Esc` forwards immediately).
 * **`[H]` Help:** Built-in scrollable reference for all shortcuts, icons, approval modes, safety boundaries, and log paths.
 
 Approval prompts (`[Y]`/`[N]`) always appear on top of every Overview view; while attached to a terminal, approval keys require a short pause in typing before `[Y]`/`[N]`/`[Esc]` are accepted.
@@ -297,8 +297,8 @@ Approval prompts (`[Y]`/`[N]`) always appear on top of every Overview view; whil
 
 * **Gemini keeps showing "Connecting to Bridge":** Check `~/.bridge/logs/server_requests.log`. If no new lines appear, the request never left Gemini, so resend your prompt. A `[CLIENT-ABORT]` or `[SSE-CLOSE]` line shows the connection dropped and why.
 * **Gemini keeps asking for permission:** See the Gemini tip under [Connecting to Any AI Client](#connecting-to-any-ai-client).
-* **Port 3000 is busy:** Quick tunnels pick a free port from 3001â€“3020 automatically. Named tunnels need port 3000, so only one Bridge can use a named tunnel at a time. Bridge only stops a Bridge server on port 3000 if the Bridge that started it has exited; it never stops another running Bridge or any other app.
-* **Selecting text in the dashboard:** Bridge listens for mouse clicks (for the `â‰¡` button), so hold `Shift` while dragging to select text. `[C]` copies the MCP URL directly.
+* **Port 3000 is busy:** Quick tunnels pick a free port from 3001–3020 automatically. Named tunnels need port 3000, so only one Bridge can use a named tunnel at a time. Bridge only stops a Bridge server on port 3000 if the Bridge that started it has exited; it never stops another running Bridge or any other app.
+* **Selecting text in the dashboard:** Bridge listens for mouse clicks (for the `≡` button), so hold `Shift` while dragging to select text. `[C]` copies the MCP URL directly.
 * **Update banner:** Bridge checks npm on startup and shows an update only when a newer version exists. Upgrade with `npm install -g @markmayandi/bridge@latest`.
 
 ---
